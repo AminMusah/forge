@@ -21,6 +21,8 @@ interface ChatStore {
   addAssistantMessage: (chatId: string) => string | null;
   /** Appends a chunk of text to a streaming assistant message. */
   appendToMessage: (chatId: string, messageId: string, chunk: string) => boolean;
+  /** Replaces a chat's transcript wholesale (AI SDK sync after a reply finishes). */
+  syncMessages: (chatId: string, messages: ChatMessage[]) => boolean;
   /** Re-pins a chat to another model; no recency bump (metadata, not activity). */
   rebindModel: (chatId: string, modelId: string) => boolean;
   renameChat: (id: string, title: string) => boolean;
@@ -88,6 +90,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               ),
             }
           : c
+      ),
+    }));
+    return true;
+  },
+  syncMessages: (chatId, messages) => {
+    if (!get().chats.some((c) => c.id === chatId)) return false;
+    set((state) => ({
+      chats: state.chats.map((c) =>
+        c.id === chatId ? { ...c, updatedAt: today(), messages } : c
       ),
     }));
     return true;

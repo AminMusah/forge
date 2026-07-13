@@ -32,38 +32,38 @@ export interface MockUser {
 
 export const models: Model[] = [
   {
-    id: "forge-1",
-    name: "Forge 1",
-    description: "Fast answers for everyday questions",
+    id: "llama-3.3-70b-versatile",
+    name: "Llama 3.3 70B",
+    description: "Versatile all-rounder for complex work",
     task: "text-generation",
   },
   {
-    id: "forge-1-pro",
-    name: "Forge 1 Pro",
-    description: "Deeper reasoning for complex work",
+    id: "openai/gpt-oss-120b",
+    name: "GPT-OSS 120B",
+    description: "High-performance open reasoning model",
     task: "text-generation",
   },
   {
-    id: "forge-1-mini",
-    name: "Forge 1 Mini",
+    id: "llama-3.1-8b-instant",
+    name: "Llama 3.1 8B Instant",
     description: "Lightweight and low-latency",
     task: "text-generation",
   },
   {
-    id: "forge-scribe",
-    name: "Forge Scribe",
+    id: "whisper-large-v3",
+    name: "Whisper Large v3",
     description: "Transcribes audio to text",
     task: "automatic-speech-recognition",
   },
   {
-    id: "forge-vision",
-    name: "Forge Vision",
+    id: "Salesforce/blip-image-captioning-large",
+    name: "BLIP Captioning",
     description: "Describes and captions images",
     task: "image-to-text",
   },
   {
-    id: "forge-brief",
-    name: "Forge Brief",
+    id: "facebook/bart-large-cnn",
+    name: "BART Large CNN",
     description: "Condenses long documents",
     task: "summarization",
   },
@@ -79,7 +79,7 @@ export const seedChats: Chat[] = [
     id: "c1",
     title: "Plan a trip to Zanzibar",
     updatedAt: "2026-07-12",
-    modelId: "forge-1",
+    modelId: "llama-3.3-70b-versatile",
     messages: [
       {
         id: "c1-m1",
@@ -109,7 +109,7 @@ export const seedChats: Chat[] = [
     id: "c2",
     title: "Explain zustand selectors",
     updatedAt: "2026-07-11",
-    modelId: "forge-1-pro",
+    modelId: "openai/gpt-oss-120b",
     messages: [
       {
         id: "c2-m1",
@@ -139,7 +139,7 @@ export const seedChats: Chat[] = [
     id: "c3",
     title: "Refactor sidebar layout",
     updatedAt: "2026-07-11",
-    modelId: "forge-1-pro",
+    modelId: "openai/gpt-oss-120b",
     messages: [
       {
         id: "c3-m1",
@@ -154,11 +154,11 @@ export const seedChats: Chat[] = [
       },
     ],
   },
-  { id: "c4", title: "SQL query for monthly revenue", updatedAt: "2026-07-10", modelId: "forge-1", messages: [] },
-  { id: "c5", title: "Draft a cover letter", updatedAt: "2026-07-09", modelId: "forge-1-mini", messages: [] },
-  { id: "c6", title: "Transcribe product demo audio", updatedAt: "2026-07-08", modelId: "forge-scribe", messages: [] },
-  { id: "c7", title: "Caption onboarding screenshots", updatedAt: "2026-07-06", modelId: "forge-vision", messages: [] },
-  { id: "c8", title: "Summarize research paper", updatedAt: "2026-07-04", modelId: "forge-brief", messages: [] },
+  { id: "c4", title: "SQL query for monthly revenue", updatedAt: "2026-07-10", modelId: "llama-3.3-70b-versatile", messages: [] },
+  { id: "c5", title: "Draft a cover letter", updatedAt: "2026-07-09", modelId: "llama-3.1-8b-instant", messages: [] },
+  { id: "c6", title: "Transcribe product demo audio", updatedAt: "2026-07-08", modelId: "whisper-large-v3", messages: [] },
+  { id: "c7", title: "Caption onboarding screenshots", updatedAt: "2026-07-06", modelId: "Salesforce/blip-image-captioning-large", messages: [] },
+  { id: "c8", title: "Summarize research paper", updatedAt: "2026-07-04", modelId: "facebook/bart-large-cnn", messages: [] },
 ];
 
 export const mockUser: MockUser = {

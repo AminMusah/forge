@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
+import { chatInstance } from "@/lib/chat-instances";
 import { requestMockReply } from "@/lib/mock-assistant";
 
 export function ChatPlaceholder() {
@@ -14,7 +15,12 @@ export function ChatPlaceholder() {
 
   const handleSend = (content: string) => {
     const chatId = createChat(content, selectedModel.id);
-    requestMockReply(chatId);
+    if (selectedModel.task === "text-generation") {
+      // Instance picks up the stored user message; no-arg send submits it.
+      void chatInstance(chatId).sendMessage();
+    } else {
+      requestMockReply(chatId);
+    }
     router.push(`/c/${chatId}`);
   };
 
