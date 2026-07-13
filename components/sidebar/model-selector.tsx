@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { Check, ChevronExpandY, Sparkles } from "reicon-react";
 
 import {
@@ -16,11 +17,21 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
-import { models } from "@/lib/mock-data";
+import { models, type Model } from "@/lib/mock-data";
 
 export function ModelSelector() {
+  const pathname = usePathname();
   const { selectedModel, setModel } = useModelStore();
+  const rebindModel = useChatStore((state) => state.rebindModel);
+
+  const handleSelect = (model: Model) => {
+    setModel(model);
+    // Inside a chat, picking a model re-pins that chat to it.
+    const activeChatId = pathname.match(/^\/c\/([^/]+)$/)?.[1];
+    if (activeChatId) rebindModel(activeChatId, model.id);
+  };
 
   return (
     <SidebarMenu>
@@ -53,7 +64,7 @@ export function ModelSelector() {
               {models.map((model) => (
                 <DropdownMenuItem
                   key={model.id}
-                  onClick={() => setModel(model)}
+                  onClick={() => handleSelect(model)}
                 >
                   <div className="grid flex-1 leading-tight">
                     <span className="font-medium">{model.name}</span>

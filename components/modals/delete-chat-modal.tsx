@@ -27,9 +27,7 @@ export function DeleteChatModal() {
   const handleDelete = () => {
     if (!chat) return;
     if (deleteChat(chat.id)) {
-      toast.success("Chat deleted", {
-        description: `if(pathname ===) router.push("/")`,
-      });
+      toast.success("Chat deleted");
       if (pathname === `/c/${chat.id}`) router.push("/");
     } else {
       toast.error("Failed to delete chat");

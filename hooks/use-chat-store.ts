@@ -13,26 +13,29 @@ function titleFrom(content: string) {
 
 interface ChatStore {
   chats: Chat[];
-  /** Creates a chat from the first user message and returns its id. */
-  createChat: (content: string) => string;
+  /** Creates a chat from the first user message, pinned to a model; returns its id. */
+  createChat: (content: string, modelId: string) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
   sendMessage: (chatId: string, content: string) => boolean;
   /** Adds an empty assistant message to stream into; returns its id. */
   addAssistantMessage: (chatId: string) => string | null;
   /** Appends a chunk of text to a streaming assistant message. */
   appendToMessage: (chatId: string, messageId: string, chunk: string) => boolean;
+  /** Re-pins a chat to another model; no recency bump (metadata, not activity). */
+  rebindModel: (chatId: string, modelId: string) => boolean;
   renameChat: (id: string, title: string) => boolean;
   deleteChat: (id: string) => boolean;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   chats: seedChats,
-  createChat: (content) => {
+  createChat: (content, modelId) => {
     const id = crypto.randomUUID();
     const chat: Chat = {
       id,
       title: titleFrom(content),
       updatedAt: today(),
+      modelId,
       messages: [{ id: crypto.randomUUID(), role: "user", content: content.trim() }],
     };
     set((state) => ({ chats: [chat, ...state.chats] }));
@@ -85,6 +88,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               ),
             }
           : c
+      ),
+    }));
+    return true;
+  },
+  rebindModel: (chatId, modelId) => {
+    if (!get().chats.some((chat) => chat.id === chatId)) return false;
+    set((state) => ({
+      chats: state.chats.map((chat) =>
+        chat.id === chatId ? { ...chat, modelId } : chat
       ),
     }));
     return true;

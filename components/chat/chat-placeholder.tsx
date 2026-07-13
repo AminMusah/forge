@@ -13,7 +13,7 @@ export function ChatPlaceholder() {
   const createChat = useChatStore((state) => state.createChat);
 
   const handleSend = (content: string) => {
-    const chatId = createChat(content);
+    const chatId = createChat(content, selectedModel.id);
     requestMockReply(chatId);
     router.push(`/c/${chatId}`);
   };

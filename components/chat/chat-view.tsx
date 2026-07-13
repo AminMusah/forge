@@ -1,9 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { MessageList } from "@/components/chat/message-list";
 import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
+import { useModelStore } from "@/hooks/use-model-store";
 import { requestMockReply } from "@/lib/mock-assistant";
+import { models } from "@/lib/mock-data";
 
 interface ChatViewProps {
   chatId: string;
@@ -14,6 +18,13 @@ export function ChatView({ chatId }: ChatViewProps) {
     state.chats.find((c) => c.id === chatId)
   );
   const sendMessage = useChatStore((state) => state.sendMessage);
+
+  // Keep the sidebar model selector describing the chat being viewed.
+  const modelId = chat?.modelId;
+  useEffect(() => {
+    const model = models.find((m) => m.id === modelId);
+    if (model) useModelStore.getState().setModel(model);
+  }, [modelId]);
 
   if (!chat) {
     return (

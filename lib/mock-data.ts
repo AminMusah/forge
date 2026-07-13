@@ -1,7 +1,10 @@
+import type { HfTask } from "@/lib/hf-tasks";
+
 export interface Model {
   id: string;
   name: string;
   description: string;
+  task: HfTask;
 }
 
 export type MessageRole = "user" | "assistant";
@@ -16,6 +19,8 @@ export interface Chat {
   id: string;
   title: string;
   updatedAt: string;
+  /** Model chosen when the chat was created; pinned for the chat's life. */
+  modelId: string;
   messages: ChatMessage[];
 }
 
@@ -30,24 +35,51 @@ export const models: Model[] = [
     id: "forge-1",
     name: "Forge 1",
     description: "Fast answers for everyday questions",
+    task: "text-generation",
   },
   {
     id: "forge-1-pro",
     name: "Forge 1 Pro",
     description: "Deeper reasoning for complex work",
+    task: "text-generation",
   },
   {
     id: "forge-1-mini",
     name: "Forge 1 Mini",
     description: "Lightweight and low-latency",
+    task: "text-generation",
+  },
+  {
+    id: "forge-scribe",
+    name: "Forge Scribe",
+    description: "Transcribes audio to text",
+    task: "automatic-speech-recognition",
+  },
+  {
+    id: "forge-vision",
+    name: "Forge Vision",
+    description: "Describes and captions images",
+    task: "image-to-text",
+  },
+  {
+    id: "forge-brief",
+    name: "Forge Brief",
+    description: "Condenses long documents",
+    task: "summarization",
   },
 ];
+
+/** Task classification of a chat's pinned model. */
+export function taskForModel(modelId: string): HfTask {
+  return models.find((m) => m.id === modelId)?.task ?? "text-generation";
+}
 
 export const seedChats: Chat[] = [
   {
     id: "c1",
     title: "Plan a trip to Zanzibar",
     updatedAt: "2026-07-12",
+    modelId: "forge-1",
     messages: [
       {
         id: "c1-m1",
@@ -77,6 +109,7 @@ export const seedChats: Chat[] = [
     id: "c2",
     title: "Explain zustand selectors",
     updatedAt: "2026-07-11",
+    modelId: "forge-1-pro",
     messages: [
       {
         id: "c2-m1",
@@ -106,6 +139,7 @@ export const seedChats: Chat[] = [
     id: "c3",
     title: "Refactor sidebar layout",
     updatedAt: "2026-07-11",
+    modelId: "forge-1-pro",
     messages: [
       {
         id: "c3-m1",
@@ -120,11 +154,11 @@ export const seedChats: Chat[] = [
       },
     ],
   },
-  { id: "c4", title: "SQL query for monthly revenue", updatedAt: "2026-07-10", messages: [] },
-  { id: "c5", title: "Draft a cover letter", updatedAt: "2026-07-09", messages: [] },
-  { id: "c6", title: "Tailwind v4 theme tokens", updatedAt: "2026-07-08", messages: [] },
-  { id: "c7", title: "Debug Next.js hydration error", updatedAt: "2026-07-06", messages: [] },
-  { id: "c8", title: "Ideas for a side project", updatedAt: "2026-07-04", messages: [] },
+  { id: "c4", title: "SQL query for monthly revenue", updatedAt: "2026-07-10", modelId: "forge-1", messages: [] },
+  { id: "c5", title: "Draft a cover letter", updatedAt: "2026-07-09", modelId: "forge-1-mini", messages: [] },
+  { id: "c6", title: "Transcribe product demo audio", updatedAt: "2026-07-08", modelId: "forge-scribe", messages: [] },
+  { id: "c7", title: "Caption onboarding screenshots", updatedAt: "2026-07-06", modelId: "forge-vision", messages: [] },
+  { id: "c8", title: "Summarize research paper", updatedAt: "2026-07-04", modelId: "forge-brief", messages: [] },
 ];
 
 export const mockUser: MockUser = {
