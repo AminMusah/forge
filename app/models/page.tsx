@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronDown, Search } from "reicon-react";
+import { ChevronDown, Search } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +34,6 @@ export default function ModelsPage() {
   const [query, setQuery] = React.useState("");
   const [task, setTask] = React.useState<HfTask>("text-generation");
   const [sort, setSort] = React.useState<HubSort>("trendingScore");
-  const [runnableOnly, setRunnableOnly] = React.useState(true);
   const [results, setResults] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
   const searchRef = React.useRef<HTMLInputElement>(null);
@@ -55,7 +54,9 @@ export default function ModelsPage() {
     setLoading(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      searchHubModels({ query, task, sort, runnableOnly }, controller.signal)
+      // Always provider-backed: models the Hub serves through no provider
+      // can't answer a chat at all, so surfacing them only yields dead picks.
+      searchHubModels({ query, task, sort, runnableOnly: true }, controller.signal)
         .then((found) => {
           setResults(found);
           setLoading(false);
@@ -72,7 +73,7 @@ export default function ModelsPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, task, sort, runnableOnly]);
+  }, [query, task, sort]);
 
   const useInChat = (model: Model) => {
     addModel(model);
@@ -150,17 +151,6 @@ export default function ModelsPage() {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* <Button
-          variant={runnableOnly ? "secondary" : "outline"}
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setRunnableOnly((v) => !v)}
-          aria-pressed={runnableOnly}
-          title="Only models an inference provider serves. Long-tail models may still need to warm up on first use."
-        >
-          {runnableOnly && <Check className="size-3.5" />}
-          Has a provider
-        </Button> */}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
