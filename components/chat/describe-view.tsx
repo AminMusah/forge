@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, Copy, Download, Music, Refresh } from "reicon-react";
+import { Check, Copy, Refresh } from "reicon-react";
 
 import { FileDropzone } from "@/components/chat/file-dropzone";
-import { AudioPlayer } from "@/components/chat/audio-player";
 import { ModelChip } from "@/components/chat/model-chip";
+import { VisionTaskChip } from "@/components/chat/vision-task-chip";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -23,22 +23,22 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useConversation } from "@/hooks/use-conversation";
 import { useModelLoadStore } from "@/hooks/use-model-load-store";
 import { useModelStore } from "@/hooks/use-model-store";
-import { sendAudioToConversation } from "@/lib/conversation";
+import { sendImageToConversation } from "@/lib/conversation";
 import type { ChatMessage } from "@/lib/types";
+import { DEFAULT_VISION_TOKEN, visionLabel, type VisionToken } from "@/lib/vision";
 
-interface TranscribeViewProps {
+interface DescribeViewProps {
   chatId: string;
 }
 
 /**
- * A transcription thread: each clip is a message, each transcript is the reply.
- * Structurally it IS a chat — same scroller, same message rows, same composer
- * slot — and the composer is a dropzone rather than a textarea. Dropping a file
- * appends a turn, exactly as typing would.
+ * An image-reading thread: each image is a message, what the model saw is the
+ * reply. Structurally identical to the transcription thread — the registry means
+ * a new task is a surface and a worker branch, and nothing else.
  *
  * Only mounted once the chat store has hydrated — see ChatPage.
  */
-export function TranscribeView({ chatId }: TranscribeViewProps) {
+export function DescribeView({ chatId }: DescribeViewProps) {
   const exists = useChatStore((state) =>
     state.chats.some((c) => c.id === chatId)
   );
@@ -49,6 +49,7 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
   const { messages, streamingId, isStreaming, regenerate } =
     useConversation(chatId);
   const [reading, setReading] = React.useState(false);
+  const [task, setTask] = React.useState<VisionToken>(DEFAULT_VISION_TOKEN);
 
   // Keep the model chip describing the chat being viewed.
   React.useEffect(() => {
@@ -60,7 +61,7 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
   const handleFile = async (file: File) => {
     setReading(true);
     try {
-      await sendAudioToConversation(chatId, file);
+      await sendImageToConversation(chatId, file, task);
     } catch (error) {
       toast.error("Couldn't read that file", {
         description: error instanceof Error ? error.message : undefined,
@@ -73,7 +74,7 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
   if (!exists) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <h1 className="text-lg font-semibold">Transcription not found</h1>
+        <h1 className="text-lg font-semibold">Image not found</h1>
         <p className="text-sm text-muted-foreground">
           It may have been deleted. Start a new one from the sidebar.
         </p>
@@ -82,12 +83,10 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
   }
 
   const lastId = messages.at(-1)?.id;
-
-  // Retry re-runs the clip that produced the last transcript — so it's only
-  // offered while that clip's bytes are still loaded. After a reload they're
-  // gone, and a Retry that can only fail is worse than no Retry.
-  const lastClip = messages.findLast((m) => m.role === "user" && m.file);
-  const canRetry = Boolean(lastClip?.file?.url);
+  // The bytes are stripped on persist, so after a reload there's no image to
+  // re-read — and a Retry that can only fail is worse than no Retry.
+  const lastImage = messages.findLast((m) => m.role === "user" && m.file);
+  const canRetry = Boolean(lastImage?.file?.url);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -97,12 +96,10 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
             <MessageScrollerViewport>
               <MessageScrollerContent className="mx-auto w-full max-w-3xl px-4 py-6">
                 {messages.map((message) => (
-                  <TranscriptRow
+                  <DescribeRow
                     key={message.id}
                     message={message}
                     isStreaming={message.id === streamingId}
-                    // Only the last reply is regenerable — the SDK truncates the
-                    // transcript from the regenerated message onward anyway.
                     onRegenerate={
                       canRetry &&
                       message.id === lastId &&
@@ -121,26 +118,25 @@ export function TranscribeView({ chatId }: TranscribeViewProps) {
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
         <FileDropzone
-          kind="audio"
+          kind="image"
           compact
           onFile={(file) => void handleFile(file)}
           busy={reading || isStreaming}
-          // Transcription models only: this chat's task decides which surface
-          // renders it, so re-pinning to a chat model would swap this thread of
-          // audio out for a ChatView that can't render any of it.
-          actions={<ModelChip task="automatic-speech-recognition" />}
+          actions={
+            <>
+              <VisionTaskChip value={task} onChange={setTask} />
+              {/* Vision models only — re-pinning to a chat model would swap this
+                  thread of images for a view that can't render any of it. */}
+              <ModelChip task="image-text-to-text" />
+            </>
+          }
         />
       </div>
     </div>
   );
 }
 
-/**
- * Not memoized, unlike MessageRow: a transcript arrives as ONE delta (both
- * runtimes hand back the whole thing at once), so there is no per-token
- * re-render for a comparator to protect against.
- */
-function TranscriptRow({
+function DescribeRow({
   message,
   isStreaming,
   onRegenerate,
@@ -161,19 +157,19 @@ function TranscriptRow({
       >
         <MessageContent>
           {message.role === "user" ? (
-            <ClipBubble message={message} />
+            <ImageBubble message={message} />
           ) : (
             <div className="flex flex-col gap-2">
               {message.content ? (
                 <>
-                  {/* Plain text, not markdown: a transcript is what was said, and
-                      markdown would silently eat a spoken "*" or "#". */}
+                  {/* Plain text, not markdown: OCR returns what was written, and
+                      markdown would eat a literal "*" or "#" off a sign. */}
                   <p className="whitespace-pre-wrap text-sm/relaxed">
                     {message.content}
                   </p>
                   {!isStreaming && (
-                    <TranscriptActions
-                      transcript={message.content}
+                    <ResultActions
+                      text={message.content}
                       onRegenerate={onRegenerate}
                     />
                   )}
@@ -189,108 +185,88 @@ function TranscriptRow({
   );
 }
 
-/** The clip itself: the message the user "sent". */
-function ClipBubble({ message }: { message: ChatMessage }) {
-  // Stripped when the store was persisted: after a reload there is nothing to
-  // play, so the row says so instead of rendering a player that can't work.
+/** The image, and what was asked of it. */
+function ImageBubble({ message }: { message: ChatMessage }) {
   const url = message.file?.url;
 
   return (
     <Bubble variant="muted">
-      <BubbleContent className="flex w-full max-w-md flex-col gap-3 text-sm/relaxed">
-        <div className="flex items-center gap-2">
-          <Music className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-medium">
-            {message.file?.name ?? "Audio"}
-          </span>
-        </div>
-
+      <BubbleContent className="flex w-full max-w-xs flex-col gap-2 text-sm/relaxed">
         {url ? (
-          <AudioPlayer src={url} messageId={message.id} />
+          // Not next/image: this is a data URL held in memory for the session,
+          // and there is nothing for the optimizer to fetch or cache.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt={message.file?.name ?? "Submitted image"}
+            className="max-h-64 w-full rounded-lg object-contain"
+          />
         ) : (
           <p className="text-xs text-muted-foreground">
-            Audio isn&apos;t kept after a reload
+            Image isn&apos;t kept after a reload
           </p>
         )}
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {message.file?.name}
+          </span>
+          {/* The task token IS the message text — show what was asked. */}
+          <span className="shrink-0 rounded-full bg-background/60 px-2 py-0.5 text-xs">
+            {visionLabel(message.content)}
+          </span>
+        </div>
       </BubbleContent>
     </Bubble>
   );
 }
 
-/**
- * What a transcription shows before it lands. For a browser model that's the
- * download/compile progress — transient state, deliberately not in the
- * transcript.
- */
 function PendingStatus() {
   const status = useModelLoadStore((state) => state.status);
 
   return (
     <p className="animate-pulse text-muted-foreground" role="status">
-      {status ?? "Transcribing…"}
+      {status ?? "Reading image…"}
     </p>
   );
 }
 
-function TranscriptActions({
-  transcript,
+function ResultActions({
+  text,
   onRegenerate,
 }: {
-  transcript: string;
+  text: string;
   onRegenerate?: () => void;
 }) {
   const [copied, setCopied] = React.useState(false);
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(transcript);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Couldn't copy the transcript.");
+      toast.error("Couldn't copy that.");
     }
   };
 
-  // Copy handles the short ones; an hour-long interview is a file, not a paste.
-  const download = () => {
-    const url = URL.createObjectURL(
-      new Blob([transcript], { type: "text/plain" })
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "transcript.txt";
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Only hidden where hover exists — on touch there is no hover, so the actions
-  // stay visible rather than being unreachable.
   return (
     <div className="flex items-center gap-1 transition-opacity duration-150 ease-out focus-within:opacity-100 can-hover:opacity-0 can-hover:group-hover/message-row:opacity-100">
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        aria-label="Copy transcript"
+        aria-label="Copy"
         onClick={() => void copy()}
       >
         <IconSwap showing={copied} on={<Check />} off={<Copy />} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Download transcript"
-        onClick={download}
-      >
-        <Download />
       </Button>
       {onRegenerate && (
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="Transcribe again"
+          aria-label="Read again"
           onClick={onRegenerate}
         >
           <Refresh />

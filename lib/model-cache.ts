@@ -27,6 +27,18 @@ export function weightFiles(task: HfTask, dtype: Dtype): string[] {
   if (task === "automatic-speech-recognition") {
     return ["onnx/encoder_model.onnx", `onnx/decoder_model_merged_${dtype}.onnx`];
   }
+  // A vision-language model is FOUR graphs. The vision tower and the embedding
+  // table stay fp16 — quantizing them is what makes a VLM describe the wrong
+  // picture, while the language halves quantize fine. Same dtype split the
+  // worker loads with; keep the two in step.
+  if (task === "image-text-to-text") {
+    return [
+      "onnx/embed_tokens_fp16.onnx",
+      "onnx/vision_encoder_fp16.onnx",
+      `onnx/encoder_model_${dtype}.onnx`,
+      `onnx/decoder_model_merged_${dtype}.onnx`,
+    ];
+  }
   return [`onnx/model_${dtype}.onnx`];
 }
 

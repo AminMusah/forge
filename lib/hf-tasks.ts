@@ -1,12 +1,17 @@
 /**
- * Task types supported by transformers.js pipelines.
+ * Hugging Face task types — the Hub's `pipeline_tag` vocabulary, which is what
+ * /models filters on and what the task-surface registry keys off.
  *
- * Hand-derived from @huggingface/transformers v3 (the library is not a
- * dependency yet — install it when inference lands). Recipe to regenerate:
+ * Mostly the transformers.js pipeline names, derived with:
  *
  *   Object.keys(tf)
  *     .filter((k) => k.endsWith("Pipeline") && k !== "Pipeline")
  *     .map((k) => k.replace(/Pipeline$/, "").replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase())
+ *
+ * But NOT only those: `image-text-to-text` has no pipeline() at all — every
+ * vision-language model lives outside that abstraction and is driven through its
+ * own model class (see the Florence-2 branch in browser-model.worker.ts). This
+ * list tracks what the HUB calls a task, not what transformers.js wraps.
  */
 export const hfTasks = [
   "audio-classification",
@@ -19,6 +24,7 @@ export const hfTasks = [
   "image-classification",
   "image-feature-extraction",
   "image-segmentation",
+  "image-text-to-text",
   "image-to-image",
   "image-to-text",
   "object-detection",

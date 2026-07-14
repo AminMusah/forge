@@ -1,37 +1,61 @@
 "use client";
 
 import * as React from "react";
-import { Music } from "reicon-react";
+import { Image as ImageIcon, Music } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-interface AudioDropzoneProps {
+export type DropKind = "audio" | "image";
+
+const kinds = {
+  audio: {
+    accept: "audio/*",
+    icon: <Music />,
+    title: "Drop an audio file to transcribe",
+    types: "MP3, WAV, M4A, FLAC, OGG — anything your browser can decode",
+    again: "Drop another audio file",
+    busy: "Transcribing…",
+  },
+  image: {
+    accept: "image/*",
+    icon: <ImageIcon />,
+    title: "Drop an image to read",
+    types: "PNG, JPEG, WEBP, GIF — anything your browser can decode",
+    again: "Drop another image",
+    busy: "Reading…",
+  },
+} as const;
+
+interface FileDropzoneProps {
+  kind: DropKind;
   onFile: (file: File) => void;
-  /** True while the previous clip is still being transcribed. */
+  /** True while the previous file is still being worked on. */
   busy?: boolean;
   hint?: string;
   /** Composer-sized: a single row, so it can sit under a thread like ChatInput. */
   compact?: boolean;
-  /** Composer controls (the model chip) — ChatInput carries these in a toolbar. */
+  /** Composer controls (model chip, task picker) — ChatInput has a toolbar. */
   actions?: React.ReactNode;
 }
 
 /**
- * Drop an audio file, or click to pick one. The first file input in Forge —
- * attachments and every future image task want the same control, so it takes a
- * file and knows nothing about transcription.
+ * Drop a file, or click to pick one. Knows nothing about what will be done with
+ * it — the same control feeds transcription and image reading, and it's the
+ * plumbing the composer's attachment button will want too.
  */
-export function AudioDropzone({
+export function FileDropzone({
+  kind,
   onFile,
   busy,
   hint,
   compact,
   actions,
-}: AudioDropzoneProps) {
+}: FileDropzoneProps) {
   const [over, setOver] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const copy = kinds[kind];
 
   const take = (files: FileList | null) => {
     const file = files?.[0];
@@ -56,7 +80,7 @@ export function AudioDropzone({
     <input
       ref={inputRef}
       type="file"
-      accept="audio/*"
+      accept={copy.accept}
       hidden
       onChange={(event) => {
         take(event.target.files);
@@ -66,8 +90,8 @@ export function AudioDropzone({
     />
   );
 
-  // The composer form of the control: one row, sized like ChatInput, so a thread
-  // reads as a thread — the clip you drop is the next message.
+  // The composer form: one row, sized like ChatInput, so a thread reads as a
+  // thread — the file you drop is the next message.
   if (compact) {
     return (
       <div
@@ -79,10 +103,10 @@ export function AudioDropzone({
         )}
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-          {busy ? <Spinner /> : <Music />}
+          {busy ? <Spinner /> : copy.icon}
         </span>
         <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-          {busy ? "Transcribing…" : (hint ?? "Drop another audio file")}
+          {busy ? copy.busy : (hint ?? copy.again)}
         </p>
         {actions}
         <Button
@@ -109,16 +133,12 @@ export function AudioDropzone({
       )}
     >
       <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground">
-        {busy ? <Spinner /> : <Music />}
+        {busy ? <Spinner /> : copy.icon}
       </span>
 
       <div className="grid gap-1">
-        <p className="text-sm font-medium">
-          {busy ? "Transcribing…" : "Drop an audio file to transcribe"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {hint ?? "MP3, WAV, M4A, FLAC, OGG — anything your browser can decode"}
-        </p>
+        <p className="text-sm font-medium">{busy ? copy.busy : copy.title}</p>
+        <p className="text-xs text-muted-foreground">{hint ?? copy.types}</p>
       </div>
 
       <Button
@@ -131,6 +151,7 @@ export function AudioDropzone({
         Choose file
       </Button>
 
+      {actions}
       {picker}
     </div>
   );

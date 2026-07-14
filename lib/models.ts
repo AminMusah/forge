@@ -52,4 +52,13 @@ export const defaultModels: Model[] = [
     task: "automatic-speech-recognition",
     runtime: "browser",
   },
+  {
+    id: "onnx-community/Florence-2-base-ft",
+    name: "Florence-2 (local)",
+    description: "Captions and reads text in images · runs on your GPU",
+    task: "image-text-to-text",
+    // Browser-only by necessity, not preference: the router serves ZERO
+    // image-to-text models. This task exists at all because of WebGPU.
+    runtime: "browser",
+  },
 ];

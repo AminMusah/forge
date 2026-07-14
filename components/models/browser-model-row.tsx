@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Check, DesktopDownload, Trash5 } from "reicon-react";
 
+import { isRunnable, unrunnableReason } from "@/components/chat/task-surface";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useModal } from "@/hooks/use-modal-store";
@@ -36,6 +37,7 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   const [downloaded, setDownloaded] = React.useState<boolean | null>(null);
   const [status, setStatus] = React.useState<string | null>(null);
   const webgpu = React.useMemo(hasWebGPU, []);
+  const runnable = isRunnable(model);
 
   // Cache Storage is the source of truth — no bookkeeping of ours to drift. The
   // task decides which files to look for: Whisper ships two graphs, not one.
@@ -110,7 +112,13 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
           >
             <Trash5 />
           </Button>
-          <Button size="sm" variant="outline" onClick={() => onUse(model)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!runnable}
+            title={unrunnableReason(model)}
+            onClick={() => onUse(model)}
+          >
             <Check className="size-3.5" />
             Use in chat
           </Button>
@@ -120,9 +128,12 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
           size="sm"
           variant="outline"
           className="gap-1.5"
-          disabled={!webgpu || downloaded === null}
+          // Don't let someone spend a multi-hundred-MB download on a model we
+          // then refuse to run.
+          disabled={!webgpu || downloaded === null || !runnable}
           title={
-            webgpu ? undefined : "Requires WebGPU — try Chrome or Edge"
+            unrunnableReason(model) ??
+            (webgpu ? undefined : "Requires WebGPU — try Chrome or Edge")
           }
           onClick={() => void download()}
         >

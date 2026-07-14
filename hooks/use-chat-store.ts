@@ -60,12 +60,24 @@ interface ChatStore {
   setHasHydrated: () => void;
   /**
    * Creates a chat from the first user message, pinned to a model; returns its
-   * id. `file` marks a submitted clip: the message carries its name, never its
-   * bytes (see MessageFile).
+   * id. `file` marks a submitted clip or image (the message carries its name and
+   * — in memory only — its bytes; see MessageFile). `prompt` is what was ASKED of
+   * that file: nothing for a transcription, a task token for an image. `content`
+   * always titles the chat, so a file turn passes its filename.
    */
-  createChat: (content: string, modelId: string, file?: MessageFile) => string;
+  createChat: (
+    content: string,
+    modelId: string,
+    file?: MessageFile,
+    prompt?: string
+  ) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
-  sendMessage: (chatId: string, content: string, file?: MessageFile) => boolean;
+  sendMessage: (
+    chatId: string,
+    content: string,
+    file?: MessageFile,
+    prompt?: string
+  ) => boolean;
   /** Replaces a chat's transcript (synced from the AI SDK as tokens arrive). */
   syncMessages: (chatId: string, messages: ChatMessage[]) => boolean;
   /** Re-pins a chat to another model; no recency bump (metadata, not activity). */
@@ -81,11 +93,11 @@ export const useChatStore = create<ChatStore>()(
       hasHydrated: false,
       setHasHydrated: () => set({ hasHydrated: true }),
 
-      createChat: (content, modelId, file) => {
+      createChat: (content, modelId, file, prompt) => {
         const id = crypto.randomUUID();
         const chat: Chat = {
           id,
-          // A submitted clip titles the chat with its filename, so recents and
+          // A submitted file titles the chat with its filename, so recents and
           // search read the same either way.
           title: titleFrom(content),
           updatedAt: today(),
@@ -94,9 +106,9 @@ export const useChatStore = create<ChatStore>()(
             {
               id: crypto.randomUUID(),
               role: "user",
-              // The file IS the message; repeating its name as text would just
-              // duplicate the chip the view already renders.
-              content: file ? "" : content.trim(),
+              // For a file turn the text is what was ASKED of it (a vision task
+              // token), not its name — the view already renders the file itself.
+              content: file ? (prompt ?? "") : content.trim(),
               ...(file ? { file } : {}),
             },
           ],
@@ -105,13 +117,13 @@ export const useChatStore = create<ChatStore>()(
         return id;
       },
 
-      sendMessage: (chatId, content, file) => {
+      sendMessage: (chatId, content, file, prompt) => {
         const chat = get().chats.find((c) => c.id === chatId);
         if (!chat) return false;
         const message: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
-          content: file ? "" : content.trim(),
+          content: file ? (prompt ?? "") : content.trim(),
           ...(file ? { file } : {}),
         };
         set((state) => {

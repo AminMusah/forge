@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BrowserModelRow } from "@/components/models/browser-model-row";
-import { isSupportedTask } from "@/components/chat/task-surface";
+import { isRunnable, unrunnableReason } from "@/components/chat/task-surface";
 import { useModelStore } from "@/hooks/use-model-store";
 import { formatBytes, totalCachedSize } from "@/lib/model-cache";
 import { cn } from "@/lib/utils";
@@ -253,12 +253,8 @@ export default function ModelsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!isSupportedTask(model.task)}
-                  title={
-                    isSupportedTask(model.task)
-                      ? undefined
-                      : "This task isn't supported yet"
-                  }
+                  disabled={!isRunnable(model)}
+                  title={unrunnableReason(model)}
                   onClick={() => useInChat(model)}
                 >
                   {model.task === "automatic-speech-recognition"

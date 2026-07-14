@@ -4,11 +4,12 @@ import { useModelLoadStore } from "@/hooks/use-model-load-store";
 import {
   computeWaveform,
   decodeToMono16k,
-  lastAudio,
+  lastFile,
   rememberWaveform,
 } from "@/lib/audio";
 import type { HfTask } from "@/lib/hf-tasks";
 import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
+import { DEFAULT_VISION_TOKEN } from "@/lib/vision";
 import type {
   ChatTurn,
   WorkerRequest,
@@ -223,8 +224,35 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
         controller.enqueue({ type: "start" });
         controller.enqueue({ type: "start-step" });
 
+        if (task === "image-text-to-text") {
+          const image = lastFile(messages);
+          if (!image) {
+            fail("That image is no longer loaded. Drop the file again.");
+            return;
+          }
+
+          // The task token travels as the message's text — an image turn is
+          // literally image + text, which is what image-text-to-text means.
+          const prompt =
+            [...messages]
+              .reverse()
+              .find((m) => m.role === "user")
+              ?.parts.find((part) => part.type === "text")?.text ||
+            DEFAULT_VISION_TOKEN;
+
+          worker.postMessage({
+            type: "describe",
+            id: requestId,
+            modelId,
+            dtype,
+            image: image.url,
+            prompt,
+          } satisfies WorkerRequest);
+          return;
+        }
+
         if (task === "automatic-speech-recognition") {
-          const clip = lastAudio(messages);
+          const clip = lastFile(messages);
           if (!clip) {
             fail("That clip is no longer loaded. Drop the file again.");
             return;

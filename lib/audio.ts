@@ -71,14 +71,15 @@ export function readAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * The clip to transcribe: the LAST file in the conversation. Earlier turns are
- * already transcribed, and after a reload their bytes are gone anyway — the
- * store keeps the transcript, not the audio.
+ * The file this turn is about: the LAST one in the conversation (a clip to
+ * transcribe, an image to read). Earlier turns already have their answer, and
+ * after a reload their bytes are gone anyway — the store keeps the result, not
+ * the file.
  *
- * Returns the message id alongside the url, because whoever decodes this clip
- * can cache its waveform against that id and save the view a second decode.
+ * Returns the message id alongside the url, because whoever decodes it can cache
+ * a waveform against that id and save the view a second decode.
  */
-export function lastAudio(
+export function lastFile(
   messages: UIMessage[]
 ): { id: string; url: string } | undefined {
   for (const message of [...messages].reverse()) {

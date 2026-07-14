@@ -6,7 +6,7 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
-import { forgetWaveform, lastAudio, readAsDataUrl } from "@/lib/audio";
+import { forgetWaveform, lastFile, readAsDataUrl } from "@/lib/audio";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { splitLeakedReasoning } from "@/lib/reasoning";
 import type { ChatMessage } from "@/lib/types";
@@ -71,7 +71,7 @@ export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
         const filePart = m.parts.find((part) => part.type === "file");
         const file = filePart
           ? {
-              name: filePart.filename ?? "audio",
+              name: filePart.filename ?? "file",
               mediaType: filePart.mediaType,
               url: filePart.url || undefined,
             }
@@ -132,7 +132,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
               return {
                 body: {
                   ...body,
-                  audio: lastAudio(messages)?.url ?? "",
+                  audio: lastFile(messages)?.url ?? "",
                   modelId: modelIdOf(),
                   provider: current?.provider,
                 },
@@ -274,6 +274,52 @@ export async function sendAudioToConversation(chatId: string, file: File) {
 
   void conversationOf(chatId).sendMessage({
     files: [{ type: "file", mediaType, filename: file.name, url }],
+  });
+}
+
+/**
+ * Creates a chat from an image and the question asked of it. Same shape as a
+ * transcription — the file is the user's message, the model's answer is the
+ * reply — except an image turn also carries TEXT: the task token that tells
+ * Florence-2 whether to caption the image or read the text in it.
+ */
+export async function startVisionTask(
+  file: File,
+  modelId: string,
+  prompt: string
+): Promise<string> {
+  const chatId = useChatStore.getState().createChat(
+    file.name,
+    modelId,
+    {
+      name: file.name,
+      mediaType: file.type || "image/png",
+      url: await readAsDataUrl(file),
+    },
+    prompt
+  );
+
+  void conversationOf(chatId).sendMessage();
+  return chatId;
+}
+
+/** Adds another image to an existing thread. */
+export async function sendImageToConversation(
+  chatId: string,
+  file: File,
+  prompt: string
+) {
+  const url = await readAsDataUrl(file);
+  const mediaType = file.type || "image/png";
+
+  useChatStore
+    .getState()
+    .sendMessage(chatId, file.name, { name: file.name, mediaType, url }, prompt);
+
+  void conversationOf(chatId).sendMessage({
+    // Image AND text: the token is what selects the job.
+    files: [{ type: "file", mediaType, filename: file.name, url }],
+    text: prompt,
   });
 }
 
