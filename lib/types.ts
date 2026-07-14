@@ -1,4 +1,5 @@
 import type { HfTask } from "@/lib/hf-tasks";
+import type { Dtype } from "@/lib/model-cache";
 
 export interface Model {
   id: string;
@@ -22,6 +23,14 @@ export interface Model {
    * are cached. Only models with ONNX weights can.
    */
   runtime?: "server" | "browser";
+  /**
+   * Quantization for a browser model. Defaults to q4: q4f16 is smaller but its
+   * fp16 accumulation degrades the KV cache on some GPUs, and the model
+   * degenerates into loops regardless of sampling.
+   */
+  dtype?: Dtype;
+  /** Quantizations this model actually ships (from its ONNX files). */
+  dtypes?: Dtype[];
 }
 
 export type MessageRole = "user" | "assistant";

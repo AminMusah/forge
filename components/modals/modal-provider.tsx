@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { DeleteChatModal } from "@/components/modals/delete-chat-modal";
 import { HfTokenModal } from "@/components/modals/hf-token-modal";
+import { RemoveModelModal } from "@/components/modals/remove-model-modal";
 import { RenameChatModal } from "@/components/modals/rename-chat-modal";
 import { SearchChatsModal } from "@/components/modals/search-chats-modal";
 import { useTokenStore } from "@/hooks/use-token-store";
@@ -26,6 +27,7 @@ export function ModalProvider() {
       <RenameChatModal />
       <DeleteChatModal />
       <HfTokenModal />
+      <RemoveModelModal />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 
 import { useModelLoadStore } from "@/hooks/use-model-load-store";
+import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
 import type {
   ChatTurn,
   WorkerRequest,
@@ -21,11 +22,48 @@ const setStatus = (status: string | null) =>
 /** One worker, one warm model — see browser-llm.worker.ts. */
 let worker: Worker | null = null;
 
-function getWorker(): Worker {
+export function getWorker(): Worker {
   worker ??= new Worker(new URL("./browser-llm.worker.ts", import.meta.url), {
     type: "module",
   });
   return worker;
+}
+
+/**
+ * Downloads and compiles a model ahead of use. Resolves once it's warm, so the
+ * first message streams immediately instead of paying the WebGPU compile.
+ */
+export function preloadModel(
+  modelId: string,
+  dtype: Dtype,
+  onProgress?: (status: string) => void
+): Promise<void> {
+  const worker = getWorker();
+  const id = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    const onMessage = (event: MessageEvent<WorkerResponse>) => {
+      const data = event.data;
+      if (data.id !== id) return;
+
+      if (data.type === "progress") onProgress?.(data.text);
+      else if (data.type === "done") {
+        worker.removeEventListener("message", onMessage);
+        resolve();
+      } else if (data.type === "error") {
+        worker.removeEventListener("message", onMessage);
+        reject(new Error(data.message));
+      }
+    };
+
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({
+      type: "preload",
+      id,
+      modelId,
+      dtype,
+    } satisfies WorkerRequest);
+  });
 }
 
 function toChatTurns(messages: UIMessage[]): ChatTurn[] {
@@ -41,7 +79,10 @@ function toChatTurns(messages: UIMessage[]): ChatTurn[] {
 }
 
 export class BrowserTransport implements ChatTransport<UIMessage> {
-  constructor(private readonly modelId: string) {}
+  constructor(
+    private readonly modelId: string,
+    private readonly dtype: Dtype = DEFAULT_DTYPE
+  ) {}
 
   async sendMessages({
     messages,
@@ -52,6 +93,7 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
     const worker = getWorker();
     const requestId = crypto.randomUUID();
     const modelId = this.modelId;
+    const dtype = this.dtype;
 
     return new ReadableStream<UIMessageChunk>({
       start(controller) {
@@ -120,6 +162,7 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
           type: "generate",
           id: requestId,
           modelId,
+          dtype,
           messages: toChatTurns(messages),
         } satisfies WorkerRequest);
       },

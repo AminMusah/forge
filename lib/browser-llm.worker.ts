@@ -7,6 +7,8 @@ import {
   type TextGenerationPipeline,
 } from "@huggingface/transformers";
 
+import type { Dtype } from "@/lib/model-cache";
+
 // Fetch weights from the Hub, never from our own origin. Left on, the library
 // probes `/models/<id>/…` first — and Forge *has* a /models route, so those
 // probes hit our own app before falling back.
@@ -22,7 +24,15 @@ env.allowLocalModels = false;
  */
 
 export type WorkerRequest =
-  | { type: "generate"; id: string; modelId: string; messages: ChatTurn[] }
+  | {
+      type: "generate";
+      id: string;
+      modelId: string;
+      dtype: Dtype;
+      messages: ChatTurn[];
+    }
+  // Download and compile ahead of time, so the first message streams at once.
+  | { type: "preload"; id: string; modelId: string; dtype: Dtype }
   | { type: "interrupt" };
 
 export type WorkerResponse =
@@ -32,18 +42,19 @@ export type WorkerResponse =
   | { type: "error"; id: string; message: string };
 
 export interface ChatTurn {
-  role: "system" | "user" | "assistant";
+  role: "user" | "assistant";
   content: string;
 }
 
 let generator: TextGenerationPipeline | null = null;
-let loadedModelId: string | null = null;
+let loadedKey: string | null = null;
 const stopper = new InterruptableStoppingCriteria();
 
 const post = (message: WorkerResponse) => self.postMessage(message);
 
-async function load(modelId: string, id: string) {
-  if (generator && loadedModelId === modelId) return generator;
+async function load(modelId: string, dtype: Dtype, id: string) {
+  const key = `${modelId}:${dtype}`;
+  if (generator && loadedKey === key) return generator;
 
   // Fail fast: on WASM a 0.5B model runs at a few tokens/sec, which is
   // indistinguishable from a hang.
@@ -62,10 +73,9 @@ async function load(modelId: string, id: string) {
 
   generator = await pipeline("text-generation", modelId, {
     device: "webgpu",
-    // NOT q4f16: its fp16 accumulation degrades the KV cache on some GPUs and
-    // the model degenerates into loops no matter the sampling settings. q4 is
-    // larger (750MB vs 461MB) but numerically stable.
-    dtype: "q4",
+    // q4 by default: q4f16's fp16 accumulation degrades the KV cache on some
+    // GPUs and the model degenerates into loops no matter the sampling.
+    dtype,
     progress_callback: (event: unknown) => {
       const p = event as { status?: string; progress?: number; file?: string };
 
@@ -82,7 +92,7 @@ async function load(modelId: string, id: string) {
       post({ type: "progress", id, text: `Downloading weights… ${percent}%` });
     },
   });
-  loadedModelId = modelId;
+  loadedKey = key;
   return generator;
 }
 
@@ -94,10 +104,27 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
     return;
   }
 
+  if (request.type === "preload") {
+    const { id, modelId, dtype } = request;
+    void (async () => {
+      try {
+        await load(modelId, dtype, id);
+        post({ type: "done", id });
+      } catch (error) {
+        post({
+          type: "error",
+          id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+    return;
+  }
+
   void (async () => {
-    const { id, modelId, messages } = request;
+    const { id, modelId, dtype, messages } = request;
     try {
-      const model = await load(modelId, id);
+      const model = await load(modelId, dtype, id);
       stopper.reset();
 
       // The pipeline applies the tokenizer's own chat template to this.
@@ -109,21 +136,11 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         },
       });
 
-      // The pipeline detects the chat shape and applies the tokenizer's own
-      // template. A system turn anchors it as an assistant rather than a
-      // text completer.
-      const turns = [
-        {
-          role: "system" as const,
-          content: "You are a helpful assistant. Answer concisely.",
-        },
-        ...messages,
-      ];
-
-      // Greedy decoding makes a 0.5B model loop ("a request is to ask for
-      // help" forever). Qwen's own recommended sampling settings, plus a
-      // repetition penalty, are what keep it coherent.
-      await model(turns, {
+      // No system prompt: the server path doesn't add one either, and the
+      // tokenizer's own chat template already establishes the assistant role.
+      // Greedy decoding makes a small model loop, so sample — with a
+      // repetition penalty — using the settings Qwen itself recommends.
+      await model(messages, {
         max_new_tokens: 512,
         do_sample: true,
         temperature: 0.7,

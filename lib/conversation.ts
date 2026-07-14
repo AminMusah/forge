@@ -87,7 +87,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   const model = modelOf();
   const transport =
     model?.runtime === "browser"
-      ? new BrowserTransport(model.id)
+      ? new BrowserTransport(model.id, model.dtype)
       : new DefaultChatTransport<UIMessage>({
           api: "/api/chat",
           // Resolve the model at request time so mid-chat rebinds take effect.

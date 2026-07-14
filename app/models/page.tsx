@@ -13,9 +13,15 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { BrowserModelRow } from "@/components/models/browser-model-row";
 import { useModelStore } from "@/hooks/use-model-store";
+import { formatBytes, totalCachedSize } from "@/lib/model-cache";
 import { cn } from "@/lib/utils";
-import { searchHubModels, type HubSort } from "@/lib/hf-search";
+import {
+  searchHubModels,
+  type HubSort,
+  type Runtime,
+} from "@/lib/hf-search";
 import { hfTasks, taskLabel, type HfTask } from "@/lib/hf-tasks";
 import type { Model } from "@/lib/types";
 
@@ -34,9 +40,19 @@ export default function ModelsPage() {
   const [query, setQuery] = React.useState("");
   const [task, setTask] = React.useState<HfTask>("text-generation");
   const [sort, setSort] = React.useState<HubSort>("trendingScore");
+  const [runtime, setRuntime] = React.useState<Runtime>("server");
   const [results, setResults] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [cacheUsed, setCacheUsed] = React.useState(0);
   const searchRef = React.useRef<HTMLInputElement>(null);
+
+  // Measured from transformers.js's own cache bucket, so it reports local
+  // models specifically — not everything the origin has stored.
+  const refreshCacheUsage = React.useCallback(() => {
+    void totalCachedSize().then(setCacheUsed);
+  }, []);
+
+  React.useEffect(refreshCacheUsage, [refreshCacheUsage, results]);
 
   // ⌘K / Ctrl+K focuses search (⌘B is taken by the sidebar toggle).
   React.useEffect(() => {
@@ -54,9 +70,12 @@ export default function ModelsPage() {
     setLoading(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      // Always provider-backed: models the Hub serves through no provider
-      // can't answer a chat at all, so surfacing them only yields dead picks.
-      searchHubModels({ query, task, sort, runnableOnly: true }, controller.signal)
+      // Server models must be provider-backed (otherwise they can't answer at
+      // all); browser models must have ONNX weights.
+      searchHubModels(
+        { query, task, sort, runtime, runnableOnly: true },
+        controller.signal
+      )
         .then((found) => {
           setResults(found);
           setLoading(false);
@@ -73,7 +92,7 @@ export default function ModelsPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, task, sort]);
+  }, [query, task, sort, runtime]);
 
   const useInChat = (model: Model) => {
     addModel(model);
@@ -83,11 +102,20 @@ export default function ModelsPage() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl min-h-0 flex-col gap-4 px-4 py-6">
-      <div>
-        <h1 className="text-lg font-semibold">Models</h1>
-        <p className="text-sm text-muted-foreground">
-          Browse Hugging Face models and pick one to chat with.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold">Models</h1>
+          <p className="text-sm text-muted-foreground">
+            {runtime === "browser"
+              ? "Models that run on your GPU — no token, no credits."
+              : "Browse Hugging Face models and pick one to chat with."}
+          </p>
+        </div>
+        {cacheUsed > 0 && (
+          <p className="shrink-0 text-xs text-muted-foreground">
+            Local models using {formatBytes(cacheUsed)}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -101,6 +129,32 @@ export default function ModelsPage() {
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                className="h-9 gap-1.5 rounded-[10px] px-3 text-sm font-normal"
+              />
+            }
+          >
+            {runtime === "browser" ? "Browser" : "Server"}
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-44">
+            <DropdownMenuRadioGroup
+              value={runtime}
+              onValueChange={(value) => setRuntime(value as Runtime)}
+            >
+              <DropdownMenuRadioItem value="server">
+                Server
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="browser">
+                Browser
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -171,7 +225,15 @@ export default function ModelsPage() {
               loading && "opacity-50"
             )}
           >
-            {results.map((model) => (
+            {results.map((model) =>
+              model.runtime === "browser" ? (
+                // Downloading is deliberate — see BrowserModelRow.
+                <BrowserModelRow
+                  key={model.id}
+                  model={model}
+                  onUse={useInChat}
+                />
+              ) : (
               <li
                 key={model.id}
                 className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors duration-150 hover:bg-muted/40"
@@ -201,7 +263,8 @@ export default function ModelsPage() {
                   Use in chat
                 </Button>
               </li>
-            ))}
+              )
+            )}
           </ul>
         )}
       </div>
