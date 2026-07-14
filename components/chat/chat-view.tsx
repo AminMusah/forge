@@ -67,6 +67,9 @@ export function ChatView({ chatId }: ChatViewProps) {
           autoFocus
           isStreaming={isStreaming}
           onStop={stop}
+          // A chat can only be re-pinned to another chat model — an ASR model
+          // would swap this view for one that can't render a conversation.
+          task="text-generation"
         />
       </div>
     </div>

@@ -1,12 +1,19 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 
 import { useModelLoadStore } from "@/hooks/use-model-load-store";
+import {
+  computeWaveform,
+  decodeToMono16k,
+  lastAudio,
+  rememberWaveform,
+} from "@/lib/audio";
+import type { HfTask } from "@/lib/hf-tasks";
 import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
 import type {
   ChatTurn,
   WorkerRequest,
   WorkerResponse,
-} from "@/lib/browser-llm.worker";
+} from "@/lib/browser-model.worker";
 
 const setStatus = (status: string | null) =>
   useModelLoadStore.getState().setStatus(status);
@@ -16,14 +23,14 @@ const setStatus = (status: string | null) =>
  * Because it satisfies the AI SDK's ChatTransport, everything downstream —
  * per-token persistence, stop, regenerate, the reasoning split, the message
  * list — works unchanged: the Conversation module never learns where the
- * tokens came from.
+ * tokens came from, or even that a transcription isn't a reply.
  */
 
-/** One worker, one warm model — see browser-llm.worker.ts. */
+/** One worker, one warm model — see browser-model.worker.ts. */
 let worker: Worker | null = null;
 
 export function getWorker(): Worker {
-  worker ??= new Worker(new URL("./browser-llm.worker.ts", import.meta.url), {
+  worker ??= new Worker(new URL("./browser-model.worker.ts", import.meta.url), {
     type: "module",
   });
   return worker;
@@ -36,7 +43,8 @@ export function getWorker(): Worker {
 export function preloadModel(
   modelId: string,
   dtype: Dtype,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  task: HfTask = "text-generation"
 ): Promise<void> {
   const worker = getWorker();
   const id = crypto.randomUUID();
@@ -62,6 +70,7 @@ export function preloadModel(
       id,
       modelId,
       dtype,
+      task,
     } satisfies WorkerRequest);
   });
 }
@@ -81,7 +90,8 @@ function toChatTurns(messages: UIMessage[]): ChatTurn[] {
 export class BrowserTransport implements ChatTransport<UIMessage> {
   constructor(
     private readonly modelId: string,
-    private readonly dtype: Dtype = DEFAULT_DTYPE
+    private readonly dtype: Dtype = DEFAULT_DTYPE,
+    private readonly task: HfTask = "text-generation"
   ) {}
 
   async sendMessages({
@@ -92,8 +102,7 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
   > {
     const worker = getWorker();
     const requestId = crypto.randomUUID();
-    const modelId = this.modelId;
-    const dtype = this.dtype;
+    const { modelId, dtype, task } = this;
 
     return new ReadableStream<UIMessageChunk>({
       start(controller) {
@@ -105,6 +114,12 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
           if (answerOpen) controller.enqueue({ type: "text-end", id: answerId });
           controller.enqueue({ type: "finish" });
           controller.close();
+          cleanup();
+        };
+
+        const fail = (message: string) => {
+          setStatus(null);
+          controller.error(new Error(message));
           cleanup();
         };
 
@@ -136,9 +151,7 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
               finish();
               break;
             case "error":
-              setStatus(null);
-              controller.error(new Error(data.message));
-              cleanup();
+              fail(data.message);
               break;
           }
         };
@@ -157,6 +170,37 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
 
         controller.enqueue({ type: "start" });
         controller.enqueue({ type: "start-step" });
+
+        if (task === "automatic-speech-recognition") {
+          const clip = lastAudio(messages);
+          if (!clip) {
+            fail("That clip is no longer loaded. Drop the file again.");
+            return;
+          }
+
+          // Decoding is main-thread work by necessity (AudioContext), and it
+          // must finish before the worker has anything to transcribe.
+          setStatus("Reading audio…");
+          void decodeToMono16k(clip.url)
+            .then((audio) => {
+              // The waveform is a by-product of a decode we were doing anyway —
+              // cache it so the player doesn't decode this clip a second time
+              // just to draw it.
+              rememberWaveform(clip.id, computeWaveform(audio));
+
+              worker.postMessage({
+                type: "transcribe",
+                id: requestId,
+                modelId,
+                dtype,
+                audio,
+              } satisfies WorkerRequest);
+            })
+            .catch((error: unknown) => {
+              fail(error instanceof Error ? error.message : String(error));
+            });
+          return;
+        }
 
         worker.postMessage({
           type: "generate",

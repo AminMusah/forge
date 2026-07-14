@@ -14,12 +14,19 @@ interface HubModelResult {
 
 export type Runtime = "server" | "browser";
 
-/** Which quantizations a model actually ships, read from its ONNX files. */
+/**
+ * Which quantizations a model actually ships, read from its ONNX files.
+ *
+ * Match on the dtype SUFFIX, not a fixed filename: a text generator quantizes
+ * `model_q4.onnx`, but an encoder-decoder like Whisper quantizes
+ * `decoder_model_merged_q4.onnx`. Looking for the former dropped every browser
+ * Whisper model from search as having no runnable quantization.
+ */
 function availableDtypes(siblings: HubModelResult["siblings"]): Dtype[] {
   const files = (siblings ?? []).map((s) => s.rfilename);
   const found: Dtype[] = [];
   for (const dtype of ["q4", "q4f16", "fp16", "int8"] as Dtype[]) {
-    if (files.includes(`onnx/model_${dtype}.onnx`)) found.push(dtype);
+    if (files.some((file) => file.endsWith(`_${dtype}.onnx`))) found.push(dtype);
   }
   return found;
 }

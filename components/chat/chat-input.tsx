@@ -11,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { HfTask } from "@/lib/hf-tasks";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 200;
@@ -61,6 +62,13 @@ interface ChatInputProps {
   /** True while a reply is streaming — the send button becomes a stop button. */
   isStreaming?: boolean;
   onStop?: () => void;
+  /**
+   * Restrict the model menu to this task. An open chat passes its own, so it
+   * can't be re-pinned to a model whose surface can't render it; the home
+   * screen passes nothing, because switching task there is how you get to
+   * another surface.
+   */
+  task?: HfTask;
 }
 
 export function ChatInput({
@@ -68,6 +76,7 @@ export function ChatInput({
   autoFocus,
   isStreaming = false,
   onStop,
+  task,
 }: ChatInputProps) {
   const [value, setValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -130,7 +139,7 @@ export function ChatInput({
         </ComingSoon>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <ModelChip />
+          <ModelChip task={task} />
           <ComingSoon label="Voice input" className="size-8 px-0">
             <Microphone />
           </ComingSoon>

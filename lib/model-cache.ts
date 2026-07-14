@@ -1,3 +1,5 @@
+import type { HfTask } from "@/lib/hf-tasks";
+
 /**
  * Browser-model weights live in transformers.js's own Cache Storage bucket
  * (`env.cacheKey`), so we can measure and evict them precisely — no guessing
@@ -13,9 +15,25 @@ export type Dtype = "q4" | "q4f16" | "fp16" | "int8";
 /** The one the spike verified as coherent; q4f16 degenerates on some GPUs. */
 export const DEFAULT_DTYPE: Dtype = "q4";
 
-export function weightsUrl(modelId: string, dtype: Dtype): string {
-  const file = dtype === "fp16" ? "model_fp16.onnx" : `model_${dtype}.onnx`;
-  return `https://huggingface.co/${modelId}/resolve/main/onnx/${file}`;
+/**
+ * The weight files a task's pipeline actually downloads. Not one file per model:
+ * an encoder-decoder like Whisper ships two graphs, and a text generator one — so
+ * looking for `model_q4.onnx` on Whisper finds nothing and reports a downloaded
+ * model as missing.
+ *
+ * The encoder is unquantized on purpose; see the dtype split in the worker.
+ */
+export function weightFiles(task: HfTask, dtype: Dtype): string[] {
+  if (task === "automatic-speech-recognition") {
+    return ["onnx/encoder_model.onnx", `onnx/decoder_model_merged_${dtype}.onnx`];
+  }
+  return [`onnx/model_${dtype}.onnx`];
+}
+
+function weightUrls(modelId: string, task: HfTask, dtype: Dtype): string[] {
+  return weightFiles(task, dtype).map(
+    (file) => `https://huggingface.co/${modelId}/resolve/main/${file}`
+  );
 }
 
 async function openCache(): Promise<Cache | null> {
@@ -37,15 +55,26 @@ async function sizeOf(response: Response): Promise<number> {
   }
 }
 
-/** Bytes of this model's weights already on disk, or 0 if not downloaded. */
+/**
+ * Bytes of this model's weights already on disk, or 0 if not downloaded. A model
+ * whose graphs are only partly cached counts as not downloaded — it would still
+ * have to hit the network to run.
+ */
 export async function cachedSize(
   modelId: string,
-  dtype: Dtype = DEFAULT_DTYPE
+  dtype: Dtype = DEFAULT_DTYPE,
+  task: HfTask = "text-generation"
 ): Promise<number> {
   const cache = await openCache();
   if (!cache) return 0;
-  const hit = await cache.match(weightsUrl(modelId, dtype));
-  return hit ? sizeOf(hit) : 0;
+
+  const hits = await Promise.all(
+    weightUrls(modelId, task, dtype).map((url) => cache.match(url))
+  );
+  if (hits.some((hit) => !hit)) return 0;
+
+  const sizes = await Promise.all(hits.map((hit) => sizeOf(hit!)));
+  return sizes.reduce((total, size) => total + size, 0);
 }
 
 /** Total bytes across every locally cached model — not the whole origin. */
@@ -76,16 +105,20 @@ export async function removeCachedModel(modelId: string): Promise<void> {
   );
 }
 
-/** The download size of a model we haven't fetched yet. */
+/** The download size of a model we haven't fetched yet — every graph it needs. */
 export async function remoteSize(
   modelId: string,
-  dtype: Dtype = DEFAULT_DTYPE
+  dtype: Dtype = DEFAULT_DTYPE,
+  task: HfTask = "text-generation"
 ): Promise<number> {
   try {
-    const response = await fetch(weightsUrl(modelId, dtype), {
-      method: "HEAD",
-    });
-    return Number(response.headers.get("content-length") ?? 0);
+    const sizes = await Promise.all(
+      weightUrls(modelId, task, dtype).map(async (url) => {
+        const response = await fetch(url, { method: "HEAD" });
+        return Number(response.headers.get("content-length") ?? 0);
+      })
+    );
+    return sizes.reduce((total, size) => total + size, 0);
   } catch {
     return 0;
   }

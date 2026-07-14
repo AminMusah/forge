@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { Chat, ChatMessage } from "@/lib/types";
+import type { Chat, ChatMessage, MessageFile } from "@/lib/types";
 
 /**
  * Transcripts are synced into the store on every streamed token — cheap in
@@ -58,10 +58,14 @@ interface ChatStore {
    */
   hasHydrated: boolean;
   setHasHydrated: () => void;
-  /** Creates a chat from the first user message, pinned to a model; returns its id. */
-  createChat: (content: string, modelId: string) => string;
+  /**
+   * Creates a chat from the first user message, pinned to a model; returns its
+   * id. `file` marks a submitted clip: the message carries its name, never its
+   * bytes (see MessageFile).
+   */
+  createChat: (content: string, modelId: string, file?: MessageFile) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
-  sendMessage: (chatId: string, content: string) => boolean;
+  sendMessage: (chatId: string, content: string, file?: MessageFile) => boolean;
   /** Replaces a chat's transcript (synced from the AI SDK as tokens arrive). */
   syncMessages: (chatId: string, messages: ChatMessage[]) => boolean;
   /** Re-pins a chat to another model; no recency bump (metadata, not activity). */
@@ -77,28 +81,38 @@ export const useChatStore = create<ChatStore>()(
       hasHydrated: false,
       setHasHydrated: () => set({ hasHydrated: true }),
 
-      createChat: (content, modelId) => {
+      createChat: (content, modelId, file) => {
         const id = crypto.randomUUID();
         const chat: Chat = {
           id,
+          // A submitted clip titles the chat with its filename, so recents and
+          // search read the same either way.
           title: titleFrom(content),
           updatedAt: today(),
           modelId,
           messages: [
-            { id: crypto.randomUUID(), role: "user", content: content.trim() },
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              // The file IS the message; repeating its name as text would just
+              // duplicate the chip the view already renders.
+              content: file ? "" : content.trim(),
+              ...(file ? { file } : {}),
+            },
           ],
         };
         set((state) => ({ chats: [chat, ...state.chats] }));
         return id;
       },
 
-      sendMessage: (chatId, content) => {
+      sendMessage: (chatId, content, file) => {
         const chat = get().chats.find((c) => c.id === chatId);
         if (!chat) return false;
         const message: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
-          content: content.trim(),
+          content: file ? "" : content.trim(),
+          ...(file ? { file } : {}),
         };
         set((state) => {
           const updated = state.chats.map((c) =>
@@ -157,7 +171,21 @@ export const useChatStore = create<ChatStore>()(
       // Hydration is triggered explicitly on mount so the server's empty render
       // and the client's stored chats can't disagree.
       skipHydration: true,
-      partialize: (state) => ({ chats: state.chats }),
+      // Persist everything EXCEPT the audio bytes. A clip rides on the message
+      // as a data URL so the player and a retry can reach it, but writing it
+      // here would put megabytes of base64 into a ~5MB quota and silently drop
+      // the write for every chat. Stripped at the boundary, so the in-memory
+      // store stays whole and only the stored copy forgets the audio.
+      partialize: (state) => ({
+        chats: state.chats.map((chat) => ({
+          ...chat,
+          messages: chat.messages.map(({ file, ...message }) =>
+            file
+              ? { ...message, file: { name: file.name, mediaType: file.mediaType } }
+              : message
+          ),
+        })),
+      }),
       onRehydrateStorage: () => (state) => state?.setHasHydrated(),
     }
   )

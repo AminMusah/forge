@@ -35,12 +35,31 @@ export interface Model {
 
 export type MessageRole = "user" | "assistant";
 
+/** An audio file the user submitted for transcription. */
+export interface MessageFile {
+  name: string;
+  mediaType: string;
+  /**
+   * The clip itself, as a data URL — held in memory and STRIPPED before the
+   * store is persisted (see the chat store's partialize).
+   *
+   * It must never reach localStorage: that's a ~5MB quota with no pruning, and
+   * one base64'd recording would blow it for EVERY chat, not just this one. So
+   * a clip survives navigation but not a reload, and `url` is undefined for any
+   * message read back from storage — which is exactly what tells the view to
+   * hide the player.
+   */
+  url?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   /** Chain-of-thought, rendered in a collapsible panel above the answer. */
   reasoning?: string;
+  /** Set on a user message that submitted a file (an audio clip to transcribe). */
+  file?: MessageFile;
 }
 
 export interface Chat {

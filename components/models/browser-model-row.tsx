@@ -37,12 +37,13 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   const [status, setStatus] = React.useState<string | null>(null);
   const webgpu = React.useMemo(hasWebGPU, []);
 
-  // Cache Storage is the source of truth — no bookkeeping of ours to drift.
+  // Cache Storage is the source of truth — no bookkeeping of ours to drift. The
+  // task decides which files to look for: Whisper ships two graphs, not one.
   const refresh = React.useCallback(async () => {
-    const cached = await cachedSize(model.id, dtype);
+    const cached = await cachedSize(model.id, dtype, model.task);
     setDownloaded(cached > 0);
-    setSize(cached > 0 ? cached : await remoteSize(model.id, dtype));
-  }, [model.id, dtype]);
+    setSize(cached > 0 ? cached : await remoteSize(model.id, dtype, model.task));
+  }, [model.id, dtype, model.task]);
 
   React.useEffect(() => {
     void refresh();
@@ -51,9 +52,9 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   const download = async () => {
     setStatus("Starting…");
     try {
-      // Runs through the chat worker, so the model is compiled and warm
+      // Runs through the shared worker, so the model is compiled and warm
       // afterwards — the first message streams immediately.
-      await preloadModel(model.id, dtype, setStatus);
+      await preloadModel(model.id, dtype, setStatus, model.task);
       toast.success(`${model.name} ready`, {
         description: "It runs on your GPU — no token, no credits.",
       });

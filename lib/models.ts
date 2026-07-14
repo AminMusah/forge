@@ -27,4 +27,29 @@ export const defaultModels: Model[] = [
     task: "text-generation",
     runtime: "browser",
   },
+  {
+    id: "openai/whisper-large-v3-turbo",
+    name: "Whisper Large v3 Turbo",
+    description: "Fast, high-quality transcription · needs a token",
+    task: "automatic-speech-recognition",
+    runtime: "server",
+    // hf-inference is the ONLY live provider for this model, and single-provider
+    // models fail the router's automatic selection — pin it. (v3 below is served
+    // by three, so it auto-routes and must NOT be pinned.)
+    provider: "hf-inference",
+  },
+  {
+    id: "openai/whisper-large-v3",
+    name: "Whisper Large v3",
+    description: "Best-quality transcription · needs a token",
+    task: "automatic-speech-recognition",
+    runtime: "server",
+  },
+  {
+    id: "onnx-community/whisper-base",
+    name: "Whisper Base (local)",
+    description: "Transcribes on your GPU · the audio never leaves your machine",
+    task: "automatic-speech-recognition",
+    runtime: "browser",
+  },
 ];

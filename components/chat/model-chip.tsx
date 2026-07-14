@@ -15,16 +15,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
+import type { HfTask } from "@/lib/hf-tasks";
 import type { Model } from "@/lib/types";
 
-/** Shows the active model on the chat input; picking re-pins the open chat. */
-export function ModelChip() {
+interface ModelChipProps {
+  /**
+   * Restrict the menu to models for this task. Pass it inside an open chat: a
+   * chat's task decides which surface renders it, so re-pinning a transcription
+   * to a text model would swap the whole view out from under a thread of audio.
+   * The home screen passes nothing — switching task there is the point.
+   */
+  task?: HfTask;
+}
+
+/** Shows the active model on the composer; picking re-pins the open chat. */
+export function ModelChip({ task }: ModelChipProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const models = useModelStore((state) => state.models);
+  const allModels = useModelStore((state) => state.models);
   const selectedModel = useModelStore((state) => state.selectedModel);
   const setModel = useModelStore((state) => state.setModel);
   const rebindModel = useChatStore((state) => state.rebindModel);
+
+  const models = task
+    ? allModels.filter((model) => model.task === task)
+    : allModels;
 
   const handleSelect = (model: Model) => {
     setModel(model);
