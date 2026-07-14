@@ -6,22 +6,25 @@ import { ArrowUp, Bulb, Grid, Microphone, Plus, Stop } from "reicon-react";
 import { ModelChip } from "@/components/chat/model-chip";
 import { Button } from "@/components/ui/button";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCanDictate, useDictation } from "@/hooks/use-dictation";
 import type { HfTask } from "@/lib/hf-tasks";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 200;
 
 /**
- * A composer control for a feature that doesn't exist yet. Uses aria-disabled
- * rather than `disabled` so it still reports what it will be — a disabled
- * button swallows the pointer events its tooltip needs.
+ * A composer control that can't do its job — either because it doesn't exist
+ * yet, or because this browser can't run it. Uses aria-disabled rather than
+ * `disabled` so it still reports WHY: a disabled button swallows the pointer
+ * events its tooltip needs.
  */
-function ComingSoon({
+function Unavailable({
   label,
   className,
   children,
@@ -51,9 +54,31 @@ function ComingSoon({
       >
         {children}
       </TooltipTrigger>
-      <TooltipContent>{label} — coming soon</TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
+}
+
+/** A control for a feature that doesn't exist yet. */
+function ComingSoon({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Unavailable label={`${label} — coming soon`} className={className}>
+      {children}
+    </Unavailable>
+  );
+}
+
+function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 interface ChatInputProps {
@@ -80,6 +105,16 @@ export function ChatInput({
 }: ChatInputProps) {
   const [value, setValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Dictation APPENDS: the realistic flow is to type half a thought, speak the
+  // rest, then fix a word by hand. Replacing what's there would destroy typed
+  // work with no undo.
+  const dictation = useDictation((text) => {
+    setValue((current) => (current.trim() ? `${current.trim()} ${text}` : text));
+    textareaRef.current?.focus();
+  });
+  const canDictate = useCanDictate();
+  const isRecording = dictation.status === "recording";
 
   // Grow with the content from a single line, then scroll internally.
   React.useLayoutEffect(() => {
@@ -126,6 +161,29 @@ export function ChatInput({
         className="w-full resize-none bg-transparent px-1 pt-1 pb-4 text-[15px] outline-none placeholder:text-muted-foreground"
       />
 
+      {dictation.status !== "idle" && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 px-1 pb-3 text-xs text-muted-foreground"
+        >
+          {isRecording ? (
+            <>
+              <span className="size-2 shrink-0 animate-pulse rounded-full bg-destructive" />
+              <span>Listening… {formatElapsed(dictation.seconds)}</span>
+              <span className="text-muted-foreground/60">Esc to cancel</span>
+            </>
+          ) : (
+            <>
+              <Spinner className="size-3 shrink-0" />
+              {/* While the weights are still coming down, say so — a bare
+                  "Transcribing…" that hangs for a minute looks broken. */}
+              <span>{dictation.progress ?? "Transcribing…"}</span>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-1.5">
         <ComingSoon label="Attach files" className="size-8 px-0">
           <Plus />
@@ -140,9 +198,58 @@ export function ChatInput({
 
         <div className="ml-auto flex items-center gap-1.5">
           <ModelChip task={task} />
-          <ComingSoon label="Voice input" className="size-8 px-0">
-            <Microphone />
-          </ComingSoon>
+          {canDictate ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-disabled={dictation.status === "transcribing"}
+                    aria-label={isRecording ? "Stop recording" : "Voice input"}
+                    onClick={() => {
+                      if (dictation.status === "transcribing") return;
+                      if (isRecording) void dictation.stop();
+                      else void dictation.start();
+                    }}
+                    className={cn(
+                      "size-8 px-0",
+                      isRecording && "text-destructive hover:text-destructive",
+                      dictation.status === "transcribing" &&
+                        "cursor-default text-muted-foreground opacity-60 hover:bg-transparent active:translate-y-0",
+                    )}
+                  />
+                }
+              >
+                {dictation.status === "transcribing" ? (
+                  <Spinner />
+                ) : (
+                  <IconSwap
+                    showing={isRecording}
+                    on={<Stop />}
+                    off={<Microphone />}
+                  />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {dictation.status === "transcribing"
+                  ? "Transcribing…"
+                  : isRecording
+                    ? "Stop and transcribe"
+                    : "Voice input — runs on your device"}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            // Same idiom as the unbuilt controls: a button that can't do its
+            // job still has to say why.
+            <Unavailable
+              label="Voice input needs WebGPU — try Chrome or Edge"
+              className="size-8 px-0"
+            >
+              <Microphone />
+            </Unavailable>
+          )}
           <Button
             type="submit"
             size="icon"

@@ -75,6 +75,58 @@ export function preloadModel(
   });
 }
 
+/**
+ * Transcribes samples directly, outside any conversation. Dictation is not a
+ * chat turn — it produces text for the composer, not a message — so it talks to
+ * the worker rather than going through a transport and the Chat instance.
+ */
+export function transcribeSamples(
+  audio: Float32Array,
+  modelId: string,
+  dtype: Dtype,
+  onProgress?: (status: string) => void
+): Promise<string> {
+  const worker = getWorker();
+  const id = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    // The worker sends the whole transcript as a single delta, but accumulate
+    // rather than assume — the contract is a stream of them.
+    let transcript = "";
+
+    const onMessage = (event: MessageEvent<WorkerResponse>) => {
+      const data = event.data;
+      if (data.id !== id) return;
+
+      switch (data.type) {
+        case "progress":
+          onProgress?.(data.text);
+          break;
+        case "token":
+          transcript += data.delta;
+          break;
+        case "done":
+          worker.removeEventListener("message", onMessage);
+          resolve(transcript);
+          break;
+        case "error":
+          worker.removeEventListener("message", onMessage);
+          reject(new Error(data.message));
+          break;
+      }
+    };
+
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({
+      type: "transcribe",
+      id,
+      modelId,
+      dtype,
+      audio,
+    } satisfies WorkerRequest);
+  });
+}
+
 function toChatTurns(messages: UIMessage[]): ChatTurn[] {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")

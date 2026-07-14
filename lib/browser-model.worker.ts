@@ -244,15 +244,28 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
   post({ type: "done", id });
 }
 
+/**
+ * Jobs run one at a time, in order.
+ *
+ * This worker is shared by chat and by dictation, and it holds ONE warm model —
+ * so a job for another task disposes the current one. Running two at once would
+ * mean disposing a model mid-generation: press the mic while a browser model is
+ * still replying, and the transcribe request would pull the weights out from
+ * under the reply. Serialising means a swap can only ever happen between jobs.
+ */
+let queue: Promise<void> = Promise.resolve();
+
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
 
+  // Not queued: interrupting is what UNBLOCKS the running job, so it must not
+  // wait behind it.
   if (request.type === "interrupt") {
     stopper.interrupt();
     return;
   }
 
-  void (async () => {
+  queue = queue.then(async () => {
     try {
       switch (request.type) {
         case "preload":
@@ -273,5 +286,5 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-  })();
+  });
 });
