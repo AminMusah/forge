@@ -16,6 +16,12 @@ export interface Model {
    * (unreliable) and learned the first time a reply contains </think>.
    */
   reasoning?: boolean;
+  /**
+   * Where the model runs. "browser" models execute locally on the user's GPU
+   * via transformers.js — no token, no credits, no network after the weights
+   * are cached. Only models with ONNX weights can.
+   */
+  runtime?: "server" | "browser";
 }
 
 export type MessageRole = "user" | "assistant";

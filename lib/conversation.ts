@@ -6,6 +6,7 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
+import { BrowserTransport } from "@/lib/browser-transport";
 import { splitLeakedReasoning } from "@/lib/reasoning";
 import type { ChatMessage } from "@/lib/types";
 
@@ -78,28 +79,36 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   const modelIdOf = () =>
     useChatStore.getState().chats.find((c) => c.id === chatId)?.modelId;
 
+  const modelOf = () =>
+    useModelStore.getState().models.find((m) => m.id === modelIdOf());
+
+  // A browser model runs on the user's own GPU; the transport is the only thing
+  // that changes — everything downstream is identical either way.
+  const model = modelOf();
+  const transport =
+    model?.runtime === "browser"
+      ? new BrowserTransport(model.id)
+      : new DefaultChatTransport<UIMessage>({
+          api: "/api/chat",
+          // Resolve the model at request time so mid-chat rebinds take effect.
+          prepareSendMessagesRequest: ({ messages, body }) => {
+            const current = modelOf();
+            return {
+              body: {
+                ...body,
+                messages,
+                modelId: modelIdOf(),
+                provider: current?.provider,
+                reasoning: current?.reasoning,
+              },
+            };
+          },
+        });
+
   const instance = new Chat<UIMessage>({
     id: chatId,
     messages: toUIMessages(stored?.messages ?? []),
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      // Resolve the model at request time so mid-chat rebinds take effect.
-      prepareSendMessagesRequest: ({ messages, body }) => {
-        const modelId = modelIdOf();
-        const model = useModelStore
-          .getState()
-          .models.find((m) => m.id === modelId);
-        return {
-          body: {
-            ...body,
-            messages,
-            modelId,
-            provider: model?.provider,
-            reasoning: model?.reasoning,
-          },
-        };
-      },
-    }),
+    transport,
     onFinish: () => {
       const messages = toChatMessages(instance.messages);
       const last = messages.at(-1);
@@ -122,6 +131,13 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
       syncTranscript(chatId, messages);
     },
     onError: (error) => {
+      // Browser models need no token — a WebGPU failure must not be mistaken
+      // for a missing one.
+      if (modelOf()?.runtime === "browser") {
+        toast.error("Reply failed", { description: error.message });
+        return;
+      }
+
       // A missing token is the one failure with an obvious next step: prompt
       // for it, remember the turn, and resend it once the token lands.
       void useTokenStore

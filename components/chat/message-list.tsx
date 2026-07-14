@@ -7,6 +7,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { useModelLoadStore } from "@/hooks/use-model-load-store";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
@@ -35,6 +36,21 @@ interface MessageRowProps {
   isStreaming: boolean;
   /** Shown under the last assistant message, once it has settled. */
   onRegenerate?: () => void;
+}
+
+/**
+ * What a reply shows before its first token. For a browser model that's the
+ * download/compile progress — transient state, deliberately not part of the
+ * transcript.
+ */
+function PendingStatus() {
+  const status = useModelLoadStore((state) => state.status);
+
+  return (
+    <p className="animate-pulse text-muted-foreground" role="status">
+      {status ?? "Thinking…"}
+    </p>
+  );
 }
 
 function MessageActions({
@@ -123,11 +139,7 @@ const MessageRow = React.memo(function MessageRow({
               {message.content ? (
                 <Markdown>{message.content}</Markdown>
               ) : (
-                !message.reasoning && (
-                  <p className="animate-pulse text-muted-foreground" role="status">
-                    Thinking…
-                  </p>
-                )
+                !message.reasoning && <PendingStatus />
               )}
               {/* Actions only once the reply has settled — copying or
                   regenerating a half-written answer isn't useful. */}
