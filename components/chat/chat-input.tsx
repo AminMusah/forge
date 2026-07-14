@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Bulb, Grid, Microphone, Plus } from "reicon-react";
+import { ArrowUp, Bulb, Grid, Microphone, Plus, Stop } from "reicon-react";
 
 import { ModelChip } from "@/components/chat/model-chip";
 import { Button } from "@/components/ui/button";
@@ -57,9 +57,17 @@ function ComingSoon({
 interface ChatInputProps {
   onSend: (content: string) => void;
   autoFocus?: boolean;
+  /** True while a reply is streaming — the send button becomes a stop button. */
+  isStreaming?: boolean;
+  onStop?: () => void;
 }
 
-export function ChatInput({ onSend, autoFocus }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  autoFocus,
+  isStreaming = false,
+  onStop,
+}: ChatInputProps) {
   const [value, setValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -72,6 +80,10 @@ export function ChatInput({ onSend, autoFocus }: ChatInputProps) {
   }, [value]);
 
   const submit = () => {
+    if (isStreaming) {
+      onStop?.();
+      return;
+    }
     const content = value.trim();
     if (!content) return;
     onSend(content);
@@ -124,11 +136,11 @@ export function ChatInput({ onSend, autoFocus }: ChatInputProps) {
           <Button
             type="submit"
             size="icon"
-            aria-label="Send message"
-            disabled={!value.trim()}
+            aria-label={isStreaming ? "Stop generating" : "Send message"}
+            disabled={!isStreaming && !value.trim()}
             className="size-9 rounded-lg"
           >
-            <ArrowUp />
+            {isStreaming ? <Stop /> : <ArrowUp />}
           </Button>
         </div>
       </div>

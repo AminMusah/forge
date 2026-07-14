@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { Check, Copy, Refresh } from "reicon-react";
 
 import { Markdown } from "@/components/chat/markdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
@@ -24,11 +26,55 @@ interface MessageListProps {
   messages: ChatMessage[];
   /** Id of the message currently streaming, if any. */
   streamingId?: string;
+  onRegenerate?: () => void;
 }
 
 interface MessageRowProps {
   message: ChatMessage;
   isStreaming: boolean;
+  /** Shown under the last assistant message, once it has settled. */
+  onRegenerate?: () => void;
+}
+
+function MessageActions({
+  content,
+  onRegenerate,
+}: {
+  content: string;
+  onRegenerate?: () => void;
+}) {
+  const [copied, setCopied] = React.useState(false);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/message-row:opacity-100 focus-within:opacity-100">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Copy message"
+        onClick={() => void copy()}
+      >
+        {copied ? <Check /> : <Copy />}
+      </Button>
+      {onRegenerate && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Regenerate reply"
+          onClick={onRegenerate}
+        >
+          <Refresh />
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -40,6 +86,7 @@ interface MessageRowProps {
 const MessageRow = React.memo(function MessageRow({
   message,
   isStreaming,
+  onRegenerate,
 }: MessageRowProps) {
   // Reasoning ends once the answer starts arriving.
   const isReasoning = isStreaming && !!message.reasoning && !message.content;
@@ -48,6 +95,7 @@ const MessageRow = React.memo(function MessageRow({
     <MessageScrollerItem
       messageId={message.id}
       scrollAnchor={message.role === "user"}
+      className="group/message-row"
     >
       <Message
         align={message.role === "user" ? "end" : "start"}
@@ -78,6 +126,14 @@ const MessageRow = React.memo(function MessageRow({
                   </p>
                 )
               )}
+              {/* Actions only once the reply has settled — copying or
+                  regenerating a half-written answer isn't useful. */}
+              {!isStreaming && message.content && (
+                <MessageActions
+                  content={message.content}
+                  onRegenerate={onRegenerate}
+                />
+              )}
             </div>
           )}
         </MessageContent>
@@ -89,9 +145,16 @@ const MessageRow = React.memo(function MessageRow({
   prev.isStreaming === next.isStreaming &&
   prev.message.id === next.message.id &&
   prev.message.content === next.message.content &&
-  prev.message.reasoning === next.message.reasoning);
+  prev.message.reasoning === next.message.reasoning &&
+  prev.onRegenerate === next.onRegenerate);
 
-export function MessageList({ messages, streamingId }: MessageListProps) {
+export function MessageList({
+  messages,
+  streamingId,
+  onRegenerate,
+}: MessageListProps) {
+  const lastId = messages.at(-1)?.id;
+
   return (
     <MessageScrollerProvider>
       <MessageScroller>
@@ -102,6 +165,13 @@ export function MessageList({ messages, streamingId }: MessageListProps) {
                 key={message.id}
                 message={message}
                 isStreaming={message.id === streamingId}
+                // Only the last reply is regenerable — the SDK truncates the
+                // transcript from the regenerated message onward anyway.
+                onRegenerate={
+                  message.id === lastId && message.role === "assistant"
+                    ? onRegenerate
+                    : undefined
+                }
               />
             ))}
           </MessageScrollerContent>

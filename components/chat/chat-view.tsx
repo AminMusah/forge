@@ -29,7 +29,13 @@ export function ChatView({ chatId }: ChatViewProps) {
   }, [modelId]);
 
   const instance = useMemo(() => chatInstance(chatId), [chatId]);
-  const { messages: liveMessages, status } = useChat({ chat: instance });
+  const {
+    messages: liveMessages,
+    status,
+    stop,
+    regenerate,
+  } = useChat({ chat: instance });
+  const isStreaming = status === "streaming" || status === "submitted";
 
   // Persist as tokens arrive, so a reload mid-reply keeps what streamed rather
   // than losing the turn. The store write is cheap; the localStorage write is
@@ -67,17 +73,18 @@ export function ChatView({ chatId }: ChatViewProps) {
     void instance.sendMessage({ text: content });
   };
 
+  const handleRegenerate = () => {
+    void regenerate();
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         {displayMessages.length > 0 ? (
           <MessageList
             messages={displayMessages}
-            streamingId={
-              status === "streaming" || status === "submitted"
-                ? displayMessages.at(-1)?.id
-                : undefined
-            }
+            streamingId={isStreaming ? displayMessages.at(-1)?.id : undefined}
+            onRegenerate={handleRegenerate}
           />
         ) : (
           <div className="flex h-full items-center justify-center px-4">
@@ -88,7 +95,12 @@ export function ChatView({ chatId }: ChatViewProps) {
         )}
       </div>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-        <ChatInput onSend={handleSend} autoFocus />
+        <ChatInput
+          onSend={handleSend}
+          autoFocus
+          isStreaming={isStreaming}
+          onStop={() => void stop()}
+        />
       </div>
     </div>
   );
