@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronDown, ChevronExpandY } from "reicon-react";
+import { Check, ChevronDown, Search } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { useModelStore } from "@/hooks/use-model-store";
 import { searchHubModels, type HubSort } from "@/lib/hf-search";
 import { hfTasks, taskLabel, type HfTask } from "@/lib/hf-tasks";
@@ -37,6 +36,19 @@ export default function ModelsPage() {
   const [runnableOnly, setRunnableOnly] = React.useState(true);
   const [results, setResults] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const searchRef = React.useRef<HTMLInputElement>(null);
+
+  // ⌘K / Ctrl+K focuses search (⌘B is taken by the sidebar toggle).
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   React.useEffect(() => {
     setLoading(true);
@@ -77,15 +89,24 @@ export default function ModelsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search models…"
-          className="h-8 max-w-60"
-        />
+        <div className="flex h-9 min-w-60 flex-1 items-center gap-2 rounded-[10px] border px-3 text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+          <Search className="size-3.5 shrink-0" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search models"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" className="gap-1.5" />}
+            render={
+              <Button
+                variant="outline"
+                className="h-9 gap-1.5 rounded-[10px] px-3 text-sm font-normal"
+              />
+            }
           >
             {taskLabel(task)}
             <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -105,7 +126,12 @@ export default function ModelsPage() {
         </DropdownMenu>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" className="gap-1.5" />}
+            render={
+              <Button
+                variant="outline"
+                className="h-9 gap-1.5 rounded-[10px] px-3 text-sm font-normal"
+              />
+            }
           >
             {sortLabels[sort]}
             <ChevronDown className="size-3.5 text-muted-foreground" />
