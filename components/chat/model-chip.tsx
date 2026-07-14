@@ -40,7 +40,7 @@ export function ModelChip() {
             type="button"
             variant="ghost"
             size="sm"
-            className="gap-1.5 px-2 text-xs text-muted-foreground"
+            className="gap-1.5 rounded-full bg-muted px-3 text-xs hover:bg-muted/80"
           />
         }
       >
