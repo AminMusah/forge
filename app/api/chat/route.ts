@@ -13,6 +13,7 @@ import {
 } from "ai";
 
 import { TOKEN_COOKIE } from "@/app/api/token/route";
+import { THINK_TAG } from "@/lib/reasoning";
 
 const bodySchema = z.object({
   // The AI SDK owns this shape; validate that it's a non-empty array and let
@@ -199,7 +200,7 @@ export async function POST(req: Request) {
     model: wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: "think",
+        tagName: THINK_TAG,
         startWithReasoning: reasoning === true,
       }),
     }),

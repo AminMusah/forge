@@ -5,22 +5,19 @@ import { useRouter } from "next/navigation";
 import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
-import { chatInstance } from "@/lib/chat-instances";
+import { startConversation } from "@/lib/conversation";
 
 export function ChatPlaceholder() {
   const router = useRouter();
   const hasHydrated = useChatStore((state) => state.hasHydrated);
   const selectedModel = useModelStore((state) => state.selectedModel);
-  const createChat = useChatStore((state) => state.createChat);
 
   const handleSend = (content: string) => {
     // A chat created before rehydration would be overwritten by the stored
     // chats a moment later. Hydration is a mount effect so this is all but
     // impossible, but flush it first rather than risk dropping the message.
     if (!hasHydrated) void useChatStore.persist.rehydrate();
-    const chatId = createChat(content, selectedModel.id);
-    // Instance picks up the stored user message; no-arg send submits it.
-    void chatInstance(chatId).sendMessage();
+    const chatId = startConversation(content, selectedModel.id);
     router.push(`/c/${chatId}`);
   };
 

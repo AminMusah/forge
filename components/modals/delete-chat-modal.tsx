@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
-import { evictChatInstance } from "@/lib/chat-instances";
+import { evictConversation } from "@/lib/conversation";
 
 export function DeleteChatModal() {
   const router = useRouter();
@@ -28,7 +28,7 @@ export function DeleteChatModal() {
   const handleDelete = () => {
     if (!chat) return;
     if (deleteChat(chat.id)) {
-      evictChatInstance(chat.id);
+      evictConversation(chat.id);
       toast.success("Chat deleted");
       if (pathname === `/c/${chat.id}`) router.push("/");
     } else {

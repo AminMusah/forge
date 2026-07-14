@@ -6,28 +6,23 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
+import { splitLeakedReasoning } from "@/lib/reasoning";
 import type { ChatMessage } from "@/lib/types";
 
 /**
- * Module-level AI SDK Chat instances, one per chat. Living outside React,
- * they keep streaming across navigations; views just subscribe via
- * useChat({ chat }).
+ * A conversation is one chat's turn lifecycle: sending, streaming, stopping,
+ * regenerating — and every store write those cause. It owns the AI SDK Chat
+ * instance (kept outside React so streams survive navigation), the transcript
+ * sync, the reasoning-learning rule, and the retry-once-a-token-arrives queue.
+ *
+ * Callers never see UIMessage, the Chat instance, or the message conversion.
+ * The chat store keeps what a turn doesn't cause: titles, recency, rename,
+ * delete, model rebinding.
  */
-const instances = new Map<string, Chat<UIMessage>>();
+const conversations = new Map<string, Chat<UIMessage>>();
 
-/** Chats whose turn failed for want of a token, to resend once one is added. */
+/** Turns that failed for want of a token, resent once one is added. */
 const awaitingToken = new Set<string>();
-
-/**
- * Re-sends every turn that failed because no token was set. The user message
- * is still on the instance, so a no-arg send resubmits it.
- */
-export function retryChatsAwaitingToken() {
-  for (const chatId of awaitingToken) {
-    void instances.get(chatId)?.sendMessage();
-  }
-  awaitingToken.clear();
-}
 
 function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
@@ -42,53 +37,7 @@ function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   }));
 }
 
-const CLOSING_TAG = "</think>";
-
-/**
- * A model the server didn't know reasons emits chain-of-thought inline,
- * terminated by </think> with no opening tag — so the server-side extraction
- * can't catch it. Split it out here; the store then flags the model so every
- * later turn streams reasoning properly from the first token.
- */
-interface Split {
-  content: string;
-  reasoning?: string;
-}
-
-/**
- * Every settled message is re-derived on every streamed token, so without a
- * cache this scan runs across the whole transcript per token. Keyed by the
- * exact text, settled messages hit the cache and only the growing one is
- * actually scanned.
- */
-const splitCache = new Map<string, Split>();
-const SPLIT_CACHE_MAX = 200;
-
-function splitLeakedReasoning(text: string): Split {
-  const cached = splitCache.get(text);
-  if (cached) return cached;
-
-  const idx = text.lastIndexOf(CLOSING_TAG);
-  const split: Split =
-    idx === -1
-      ? { content: text }
-      : {
-          reasoning: text
-            .slice(0, idx)
-            .replace(/^\s*<think>\s*/, "")
-            .trim(),
-          content: text.slice(idx + CLOSING_TAG.length).trimStart(),
-        };
-
-  if (splitCache.size >= SPLIT_CACHE_MAX) {
-    // Oldest entry: the partial texts of a finished stream are dead weight.
-    splitCache.delete(splitCache.keys().next().value!);
-  }
-  splitCache.set(text, split);
-  return split;
-}
-
-/** Flattens UI messages (parts) back into the store's plain-text shape. */
+/** Flattens UI messages (parts) into the store's plain-text shape. */
 export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
@@ -116,17 +65,22 @@ export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
     });
 }
 
-export function chatInstance(chatId: string): Chat<UIMessage> {
-  const existing = instances.get(chatId);
+/**
+ * The live Chat instance for a chat, created on first use and seeded from the
+ * stored transcript. Module-private in spirit — only useConversation should
+ * reach for it, so views never handle UIMessage or the instance itself.
+ */
+export function conversationOf(chatId: string): Chat<UIMessage> {
+  const existing = conversations.get(chatId);
   if (existing) return existing;
 
-  const chat = useChatStore.getState().chats.find((c) => c.id === chatId);
+  const stored = useChatStore.getState().chats.find((c) => c.id === chatId);
   const modelIdOf = () =>
     useChatStore.getState().chats.find((c) => c.id === chatId)?.modelId;
 
   const instance = new Chat<UIMessage>({
     id: chatId,
-    messages: toUIMessages(chat?.messages ?? []),
+    messages: toUIMessages(stored?.messages ?? []),
     transport: new DefaultChatTransport({
       api: "/api/chat",
       // Resolve the model at request time so mid-chat rebinds take effect.
@@ -150,8 +104,8 @@ export function chatInstance(chatId: string): Chat<UIMessage> {
       const messages = toChatMessages(instance.messages);
       const last = messages.at(-1);
 
-      // A model whose reasoning leaked into the text is a reasoning model the
-      // server didn't know about — flag it so the next turn streams cleanly.
+      // Reasoning that leaked into the text means the server didn't know this
+      // model reasons — flag it so the next turn extracts it properly.
       const modelId = modelIdOf();
       if (modelId && last?.role === "assistant" && last.reasoning) {
         useModelStore.getState().markReasoning(modelId);
@@ -165,7 +119,7 @@ export function chatInstance(chatId: string): Chat<UIMessage> {
         });
       }
 
-      useChatStore.getState().syncMessages(chatId, messages);
+      syncTranscript(chatId, messages);
     },
     onError: (error) => {
       // A missing token is the one failure with an obvious next step: prompt
@@ -183,14 +137,54 @@ export function chatInstance(chatId: string): Chat<UIMessage> {
         });
     },
   });
-  instances.set(chatId, instance);
+
+  conversations.set(chatId, instance);
   return instance;
 }
 
-/** Stops any in-flight stream and drops the cached instance (chat deleted). */
-export function evictChatInstance(chatId: string) {
-  const instance = instances.get(chatId);
+/**
+ * Records the transcript as it streams, so a reload mid-reply keeps what
+ * arrived. The store write is cheap; its localStorage flush is debounced.
+ */
+export function syncTranscript(chatId: string, messages: ChatMessage[]) {
+  useChatStore.getState().syncMessages(chatId, messages);
+}
+
+/**
+ * Creates a chat from its first message and sends it — one verb, so callers
+ * don't have to know that the store must hold the message before the
+ * instance can submit it.
+ */
+export function startConversation(text: string, modelId: string): string {
+  const chatId = useChatStore.getState().createChat(text, modelId);
+  // The instance seeds from the store, which now holds the user message; a
+  // no-arg send submits exactly that.
+  void conversationOf(chatId).sendMessage();
+  return chatId;
+}
+
+/** Sends a message in an existing conversation. */
+export function sendToConversation(chatId: string, text: string) {
+  // Recorded in the store for recency and search; the instance owns the stream.
+  useChatStore.getState().sendMessage(chatId, text);
+  void conversationOf(chatId).sendMessage({ text });
+}
+
+/**
+ * Re-sends every turn that failed because no token was set. The user message
+ * is still on the instance, so a no-arg send resubmits it.
+ */
+export function retryPendingConversations() {
+  for (const chatId of awaitingToken) {
+    void conversations.get(chatId)?.sendMessage();
+  }
+  awaitingToken.clear();
+}
+
+/** Stops any in-flight stream and forgets the conversation (chat deleted). */
+export function evictConversation(chatId: string) {
+  const instance = conversations.get(chatId);
   if (!instance) return;
   void instance.stop();
-  instances.delete(chatId);
+  conversations.delete(chatId);
 }

@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useModal } from "@/hooks/use-modal-store";
 import { useTokenStore } from "@/hooks/use-token-store";
-import { retryChatsAwaitingToken } from "@/lib/chat-instances";
+import { retryPendingConversations } from "@/lib/conversation";
 
 export function HfTokenModal() {
   const { type, isOpen, onClose } = useModal();
@@ -42,7 +42,7 @@ export function HfTokenModal() {
       onClose();
       // Resend whatever failed for want of a token, so the message the user
       // already sent gets its reply instead of sitting there unanswered.
-      retryChatsAwaitingToken();
+      retryPendingConversations();
     } catch (error) {
       toast.error("Token rejected", {
         description: error instanceof Error ? error.message : undefined,
