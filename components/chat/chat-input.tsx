@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowUp } from "reicon-react";
 
+import { ModelChip } from "@/components/chat/model-chip";
 import { Button } from "@/components/ui/button";
 
 interface ChatInputProps {
@@ -42,7 +43,8 @@ export function ChatInput({ onSend, autoFocus }: ChatInputProps) {
         placeholder="Ask anything..."
         className="w-full resize-none bg-transparent px-4 pt-3 text-sm outline-none placeholder:text-muted-foreground"
       />
-      <div className="flex items-center justify-end p-2">
+      <div className="flex items-center justify-between p-2">
+        <ModelChip />
         <Button
           type="submit"
           size="icon"

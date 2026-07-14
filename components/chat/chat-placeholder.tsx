@@ -6,7 +6,6 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { chatInstance } from "@/lib/chat-instances";
-import { requestMockReply } from "@/lib/mock-assistant";
 
 export function ChatPlaceholder() {
   const router = useRouter();
@@ -15,12 +14,8 @@ export function ChatPlaceholder() {
 
   const handleSend = (content: string) => {
     const chatId = createChat(content, selectedModel.id);
-    if (selectedModel.task === "text-generation") {
-      // Instance picks up the stored user message; no-arg send submits it.
-      void chatInstance(chatId).sendMessage();
-    } else {
-      requestMockReply(chatId);
-    }
+    // Instance picks up the stored user message; no-arg send submits it.
+    void chatInstance(chatId).sendMessage();
     router.push(`/c/${chatId}`);
   };
 
@@ -30,9 +25,6 @@ export function ChatPlaceholder() {
         <h1 className="text-2xl font-semibold tracking-tight">
           How can I help you today?
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Chatting with {selectedModel.name}
-        </p>
       </div>
       <div className="w-full max-w-2xl">
         <ChatInput onSend={handleSend} autoFocus />

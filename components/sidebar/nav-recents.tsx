@@ -32,8 +32,9 @@ import {
 } from "@/components/ui/sidebar";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
+import { taskForModel } from "@/hooks/use-model-store";
 import { taskLabel, type HfTask } from "@/lib/hf-tasks";
-import { taskForModel, type Chat } from "@/lib/mock-data";
+import type { Chat } from "@/lib/types";
 
 const taskIcons: Partial<
   Record<HfTask, React.ComponentType<{ className?: string }>>

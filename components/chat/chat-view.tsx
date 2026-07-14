@@ -8,8 +8,6 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { chatInstance, toChatMessages } from "@/lib/chat-instances";
-import { requestMockReply } from "@/lib/mock-assistant";
-import { models, taskForModel } from "@/lib/mock-data";
 
 interface ChatViewProps {
   chatId: string;
@@ -24,25 +22,22 @@ export function ChatView({ chatId }: ChatViewProps) {
   // Keep the sidebar model selector describing the chat being viewed.
   const modelId = chat?.modelId;
   useEffect(() => {
+    const { models, setModel } = useModelStore.getState();
     const model = models.find((m) => m.id === modelId);
-    if (model) useModelStore.getState().setModel(model);
+    if (model) setModel(model);
   }, [modelId]);
 
-  // Chats on a text-generation model stream via the AI SDK; other tasks
-  // keep the mock assistant until their pipelines are wired up.
-  const isLive = chat ? taskForModel(chat.modelId) === "text-generation" : false;
   const instance = useMemo(() => chatInstance(chatId), [chatId]);
   const { messages: liveMessages, status } = useChat({ chat: instance });
 
   const displayMessages = useMemo(() => {
-    if (!isLive) return chat?.messages ?? [];
     const converted = toChatMessages(liveMessages);
     // Placeholder row so MessageList shows "Thinking…" before tokens arrive.
     if (status === "submitted") {
       converted.push({ id: "pending", role: "assistant", content: "" });
     }
     return converted;
-  }, [isLive, chat?.messages, liveMessages, status]);
+  }, [liveMessages, status]);
 
   if (!chat) {
     return (
@@ -56,20 +51,23 @@ export function ChatView({ chatId }: ChatViewProps) {
   }
 
   const handleSend = (content: string) => {
-    if (isLive) {
-      // Record in the store for recency/search; the instance owns the stream.
-      sendMessage(chat.id, content);
-      void instance.sendMessage({ text: content });
-    } else if (sendMessage(chat.id, content)) {
-      requestMockReply(chat.id);
-    }
+    // Record in the store for recency/search; the instance owns the stream.
+    sendMessage(chat.id, content);
+    void instance.sendMessage({ text: content });
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         {displayMessages.length > 0 ? (
-          <MessageList messages={displayMessages} />
+          <MessageList
+            messages={displayMessages}
+            streamingId={
+              status === "streaming" || status === "submitted"
+                ? displayMessages.at(-1)?.id
+                : undefined
+            }
+          />
         ) : (
           <div className="flex h-full items-center justify-center px-4">
             <p className="text-sm text-muted-foreground">

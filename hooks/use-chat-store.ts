@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { seedChats, type Chat, type ChatMessage } from "@/lib/mock-data";
+import type { Chat, ChatMessage } from "@/lib/types";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -30,7 +30,7 @@ interface ChatStore {
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
-  chats: seedChats,
+  chats: [],
   createChat: (content, modelId) => {
     const id = crypto.randomUUID();
     const chat: Chat = {

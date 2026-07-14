@@ -1,0 +1,186 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Check, ChevronDown, ChevronExpandY } from "reicon-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { useModelStore } from "@/hooks/use-model-store";
+import { searchHubModels, type HubSort } from "@/lib/hf-search";
+import { hfTasks, taskLabel, type HfTask } from "@/lib/hf-tasks";
+import type { Model } from "@/lib/types";
+
+const sortLabels: Record<HubSort, string> = {
+  trendingScore: "Trending",
+  downloads: "Most downloads",
+  likes: "Most likes",
+  createdAt: "Newest",
+};
+
+export default function ModelsPage() {
+  const router = useRouter();
+  const addModel = useModelStore((state) => state.addModel);
+  const setModel = useModelStore((state) => state.setModel);
+
+  const [query, setQuery] = React.useState("");
+  const [task, setTask] = React.useState<HfTask>("text-generation");
+  const [sort, setSort] = React.useState<HubSort>("trendingScore");
+  const [runnableOnly, setRunnableOnly] = React.useState(true);
+  const [results, setResults] = React.useState<Model[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setLoading(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      searchHubModels({ query, task, sort, runnableOnly }, controller.signal)
+        .then((found) => {
+          setResults(found);
+          setLoading(false);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setLoading(false);
+          toast.error("Model search failed", {
+            description: error instanceof Error ? error.message : undefined,
+          });
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, task, sort, runnableOnly]);
+
+  const useInChat = (model: Model) => {
+    addModel(model);
+    setModel(model);
+    router.push("/");
+  };
+
+  return (
+    <div className="mx-auto flex h-full w-full max-w-3xl min-h-0 flex-col gap-4 px-4 py-6">
+      <div>
+        <h1 className="text-lg font-semibold">Models</h1>
+        <p className="text-sm text-muted-foreground">
+          Browse Hugging Face models and pick one to chat with.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search models…"
+          className="h-8 max-w-60"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="gap-1.5" />}
+          >
+            {taskLabel(task)}
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="max-h-72 w-64 overflow-y-auto">
+            <DropdownMenuRadioGroup
+              value={task}
+              onValueChange={(value) => setTask(value as HfTask)}
+            >
+              {hfTasks.map((t) => (
+                <DropdownMenuRadioItem key={t} value={t}>
+                  {taskLabel(t)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="gap-1.5" />}
+          >
+            {sortLabels[sort]}
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-44">
+            <DropdownMenuRadioGroup
+              value={sort}
+              onValueChange={(value) => setSort(value as HubSort)}
+            >
+              {(Object.keys(sortLabels) as HubSort[]).map((s) => (
+                <DropdownMenuRadioItem key={s} value={s}>
+                  {sortLabels[s]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* <Button
+          variant={runnableOnly ? "secondary" : "outline"}
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setRunnableOnly((v) => !v)}
+          aria-pressed={runnableOnly}
+          title="Only models an inference provider serves. Long-tail models may still need to warm up on first use."
+        >
+          {runnableOnly && <Check className="size-3.5" />}
+          Has a provider
+        </Button> */}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Searching Hugging Face…
+          </p>
+        ) : results.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No models found. Try a different search or filters.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2 pb-4">
+            {results.map((model) => (
+              <li
+                key={model.id}
+                className="flex items-center gap-3 rounded-lg border bg-card p-3"
+              >
+                <div className="grid min-w-0 flex-1 leading-tight">
+                  <span className="truncate text-sm font-medium">
+                    {model.id}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {model.description}
+                  </span>
+                </div>
+                <span className="hidden shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground sm:inline">
+                  {taskLabel(model.task)}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={model.task !== "text-generation"}
+                  title={
+                    model.task !== "text-generation"
+                      ? "This task isn't supported in chat yet"
+                      : undefined
+                  }
+                  onClick={() => useInChat(model)}
+                >
+                  Use in chat
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

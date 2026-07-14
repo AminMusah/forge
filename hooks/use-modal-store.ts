@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Chat } from "@/lib/mock-data";
+import type { Chat } from "@/lib/types";
 
 export type ModalType = "searchChats" | "renameChat" | "deleteChat";
 

@@ -1,17 +1,24 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Folder2, Library, Plus, Search } from "reicon-react";
+import { Box, Folder2, Library, Plus, Search } from "reicon-react";
 
+import { CollapsibleMenuGroup } from "@/components/sidebar/collapsible-menu-group";
 import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { useModal } from "@/hooks/use-modal-store";
+
+/** Model sources; custom and uploaded models will join Hugging Face here. */
+const modelSources = [{ name: "Hugging Face", url: "/models" }];
 
 const workspaceItems = [
   { name: "Projects", url: "/projects", icon: Folder2 },
@@ -21,6 +28,15 @@ const workspaceItems = [
 export function NavMain() {
   const pathname = usePathname();
   const { onOpen } = useModal();
+
+  // Controlled: navigating to a models route opens the group, but the user's
+  // own toggling is preserved (an uncontrolled defaultOpen can't do both).
+  const onModelsRoute = pathname.startsWith("/models");
+  const [modelsOpen, setModelsOpen] = React.useState(onModelsRoute);
+
+  React.useEffect(() => {
+    if (onModelsRoute) setModelsOpen(true);
+  }, [onModelsRoute]);
 
   return (
     <>
@@ -43,6 +59,23 @@ export function NavMain() {
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>Workspace</SidebarGroupLabel>
         <SidebarMenu>
+          <CollapsibleMenuGroup
+            label="Models"
+            icon={<Box />}
+            open={modelsOpen}
+            onOpenChange={setModelsOpen}
+          >
+            {modelSources.map((source) => (
+              <SidebarMenuSubItem key={source.url}>
+                <SidebarMenuSubButton
+                  render={<Link href={source.url} />}
+                  isActive={pathname === source.url}
+                >
+                  <span className="truncate">{source.name}</span>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </CollapsibleMenuGroup>
           {workspaceItems.map((item) => (
             <SidebarMenuItem key={item.name}>
               <SidebarMenuButton

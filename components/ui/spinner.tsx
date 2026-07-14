@@ -1,0 +1,11 @@
+import { Loader } from "reicon-react"
+
+import { cn } from "@/lib/utils"
+
+function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+  return (
+    <Loader data-slot="spinner" role="status" aria-label="Loading" className={cn("size-4 animate-spin", className)} {...props} />
+  )
+}
+
+export { Spinner }
