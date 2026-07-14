@@ -1,10 +1,16 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { Streamdown } from "streamdown";
 
-import { CodeBlock } from "@/components/chat/code-block";
 import { cn } from "@/lib/utils";
+
+// Shiki is heavy and most replies contain no code — load it on first fence.
+const CodeBlock = dynamic(
+  () => import("@/components/chat/code-block").then((m) => m.CodeBlock),
+  { ssr: false }
+);
 
 /** Extracts the plain text of a rendered markdown node (for code contents). */
 function textOf(node: React.ReactNode): string {
@@ -17,16 +23,12 @@ function textOf(node: React.ReactNode): string {
 }
 
 /**
- * Streamdown parses; our overrides style it with Forge's tokens rather than
- * its bundled look. `parseIncompleteMarkdown` completes unterminated blocks
- * mid-stream, so a half-written fence renders as code instead of flickering.
+ * Hoisted to module scope on purpose. Defined inline, every render would
+ * create fresh component identities — React would read them as new *types*
+ * and remount the whole markdown subtree on each streamed token, re-running
+ * Shiki over every code block.
  */
-export function Markdown({ children }: { children: string }) {
-  return (
-    <Streamdown
-      parseIncompleteMarkdown
-      className="text-sm/relaxed"
-      components={{
+const components = {
         p: ({ className, node: _node, ...props }) => (
           <p className={cn("mb-3 last:mb-0", className)} {...props} />
         ),
@@ -127,10 +129,22 @@ export function Markdown({ children }: { children: string }) {
             <CodeBlock code={textOf(children).replace(/\n$/, "")} language={language} />
           );
         },
-        // The block wrapper would nest a <div> inside a <pre>; CodeBlock owns
-        // its own container, so let it through untouched.
-        pre: ({ children }) => <>{children}</>,
-      }}
+  // The block wrapper would nest a <div> inside a <pre>; CodeBlock owns its
+  // own container, so let it through untouched.
+  pre: (props: { children?: React.ReactNode }) => <>{props.children}</>,
+} as React.ComponentProps<typeof Streamdown>["components"];
+
+/**
+ * Streamdown parses; our overrides style it with Forge's tokens rather than
+ * its bundled look. `parseIncompleteMarkdown` completes unterminated blocks
+ * mid-stream, so a half-written fence renders as code instead of flickering.
+ */
+export function Markdown({ children }: { children: string }) {
+  return (
+    <Streamdown
+      parseIncompleteMarkdown
+      className="text-sm/relaxed"
+      components={components}
     >
       {children}
     </Streamdown>

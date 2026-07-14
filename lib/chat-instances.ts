@@ -50,19 +50,42 @@ const CLOSING_TAG = "</think>";
  * can't catch it. Split it out here; the store then flags the model so every
  * later turn streams reasoning properly from the first token.
  */
-function splitLeakedReasoning(text: string): {
+interface Split {
   content: string;
   reasoning?: string;
-} {
+}
+
+/**
+ * Every settled message is re-derived on every streamed token, so without a
+ * cache this scan runs across the whole transcript per token. Keyed by the
+ * exact text, settled messages hit the cache and only the growing one is
+ * actually scanned.
+ */
+const splitCache = new Map<string, Split>();
+const SPLIT_CACHE_MAX = 200;
+
+function splitLeakedReasoning(text: string): Split {
+  const cached = splitCache.get(text);
+  if (cached) return cached;
+
   const idx = text.lastIndexOf(CLOSING_TAG);
-  if (idx === -1) return { content: text };
-  return {
-    reasoning: text
-      .slice(0, idx)
-      .replace(/^\s*<think>\s*/, "")
-      .trim(),
-    content: text.slice(idx + CLOSING_TAG.length).trimStart(),
-  };
+  const split: Split =
+    idx === -1
+      ? { content: text }
+      : {
+          reasoning: text
+            .slice(0, idx)
+            .replace(/^\s*<think>\s*/, "")
+            .trim(),
+          content: text.slice(idx + CLOSING_TAG.length).trimStart(),
+        };
+
+  if (splitCache.size >= SPLIT_CACHE_MAX) {
+    // Oldest entry: the partial texts of a finished stream are dead weight.
+    splitCache.delete(splitCache.keys().next().value!);
+  }
+  splitCache.set(text, split);
+  return split;
 }
 
 /** Flattens UI messages (parts) back into the store's plain-text shape. */

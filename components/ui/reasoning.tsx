@@ -8,6 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -92,15 +93,23 @@ function ReasoningTrigger({
     >
       <Marker>
         <MarkerIcon>
-          {isStreaming ? (
-            <Spinner />
-          ) : (
-            <ChevronRight className="transition-transform duration-200 group-data-open/reasoning:rotate-90" />
-          )}
+          {/* Spinner and chevron crossfade rather than hard-cutting — this is
+              the moment reasoning ends and the answer begins. */}
+          <IconSwap
+            showing={isStreaming}
+            on={<Spinner />}
+            off={
+              <ChevronRight className="transition-transform duration-200 ease-out group-data-open/reasoning:rotate-90" />
+            }
+          />
         </MarkerIcon>
         {/* The spinner already signals activity — a pulsing label on top of it
-            is a second motion saying the same thing. */}
-        <MarkerContent>
+            is a second motion saying the same thing. Keyed so the label
+            crossfades with the icon instead of snapping to new text. */}
+        <MarkerContent
+          key={isStreaming ? "thinking" : "thought"}
+          className="animate-in fade-in-0 duration-150 ease-out"
+        >
           {isStreaming
             ? "Thinking…"
             : duration !== null

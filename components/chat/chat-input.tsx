@@ -5,6 +5,7 @@ import { ArrowUp, Bulb, Grid, Microphone, Plus, Stop } from "reicon-react";
 
 import { ModelChip } from "@/components/chat/model-chip";
 import { Button } from "@/components/ui/button";
+import { IconSwap } from "@/components/ui/icon-swap";
 import {
   Tooltip,
   TooltipContent,
@@ -140,7 +141,7 @@ export function ChatInput({
             disabled={!isStreaming && !value.trim()}
             className="size-9 rounded-lg"
           >
-            {isStreaming ? <Stop /> : <ArrowUp />}
+            <IconSwap showing={isStreaming} on={<Stop />} off={<ArrowUp />} />
           </Button>
         </div>
       </div>

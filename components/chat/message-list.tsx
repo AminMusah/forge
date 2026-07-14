@@ -6,6 +6,7 @@ import { Check, Copy, Refresh } from "reicon-react";
 import { Markdown } from "@/components/chat/markdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
@@ -51,8 +52,10 @@ function MessageActions({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Only hidden where hover exists — on touch there is no hover, so the
+  // actions stay visible rather than being unreachable.
   return (
-    <div className="flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/message-row:opacity-100 focus-within:opacity-100">
+    <div className="flex items-center gap-1 transition-opacity duration-150 ease-out focus-within:opacity-100 can-hover:opacity-0 can-hover:group-hover/message-row:opacity-100">
       <Button
         type="button"
         variant="ghost"
@@ -60,7 +63,7 @@ function MessageActions({
         aria-label="Copy message"
         onClick={() => void copy()}
       >
-        {copied ? <Check /> : <Copy />}
+        <IconSwap showing={copied} on={<Check />} off={<Copy />} />
       </Button>
       {onRegenerate && (
         <Button
