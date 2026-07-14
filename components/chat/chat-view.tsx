@@ -13,6 +13,7 @@ interface ChatViewProps {
   chatId: string;
 }
 
+/** Only mounted once the chat store has hydrated — see ChatPage. */
 export function ChatView({ chatId }: ChatViewProps) {
   const chat = useChatStore((state) =>
     state.chats.find((c) => c.id === chatId)
@@ -29,6 +30,16 @@ export function ChatView({ chatId }: ChatViewProps) {
 
   const instance = useMemo(() => chatInstance(chatId), [chatId]);
   const { messages: liveMessages, status } = useChat({ chat: instance });
+
+  // Persist as tokens arrive, so a reload mid-reply keeps what streamed rather
+  // than losing the turn. The store write is cheap; the localStorage write is
+  // debounced inside the store's persist config.
+  useEffect(() => {
+    if (liveMessages.length === 0) return;
+    useChatStore
+      .getState()
+      .syncMessages(chatId, toChatMessages(liveMessages));
+  }, [chatId, liveMessages]);
 
   const displayMessages = useMemo(() => {
     const converted = toChatMessages(liveMessages);

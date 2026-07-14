@@ -66,6 +66,7 @@ function groupChatsByTask(chats: Chat[]) {
 
 export function NavRecents() {
   const pathname = usePathname();
+  const hasHydrated = useChatStore((state) => state.hasHydrated);
   const chats = useChatStore((state) => state.chats);
   const { onOpen } = useModal();
 
@@ -86,7 +87,8 @@ export function NavRecents() {
     });
   }, [activeTask]);
 
-  if (chats.length === 0) return null;
+  // Stay silent until stored chats are read, rather than flashing "no chats".
+  if (!hasHydrated || chats.length === 0) return null;
 
   const setGroupOpen = (task: HfTask, open: boolean) => {
     setOpenTasks((prev) => {

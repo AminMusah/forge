@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { ModalProvider } from "@/components/modals/modal-provider";
 import { ThemeProvider } from "@/components/theme-provider";
+import { HydrationGate } from "@/components/hydration-gate";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -55,6 +56,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <Toaster />
+          <HydrationGate />
           <SidebarProvider>
             <ModalProvider />
             <AppSidebar />
