@@ -1,4 +1,6 @@
 import { createHuggingFace } from "@ai-sdk/huggingface";
+import { cookies } from "next/headers";
+import { z } from "zod";
 import {
   APICallError,
   streamText,
@@ -9,6 +11,21 @@ import {
   wrapLanguageModel,
   type UIMessage,
 } from "ai";
+
+import { TOKEN_COOKIE } from "@/app/api/token/route";
+
+const bodySchema = z.object({
+  // The AI SDK owns this shape; validate that it's a non-empty array and let
+  // convertToModelMessages reject anything malformed inside it.
+  messages: z.array(z.unknown()).min(1),
+  modelId: z.string().min(1).max(200),
+  // Interpolated into `${modelId}:${provider}` — never pass through unchecked.
+  provider: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
+  reasoning: z.boolean().optional(),
+});
 
 /**
  * The router buries the real status in the message text (`402 "…"`). Recover
@@ -126,10 +143,17 @@ async function surfaceHiddenFailures(response: Response): Promise<Response> {
   });
 }
 
-const huggingFace = createHuggingFace({
-  apiKey: process.env.HUGGINGFACE_API_KEY,
-  fetch: async (input, init) => surfaceHiddenFailures(await fetch(input, init)),
-});
+/**
+ * Built per request from the caller's own token — Forge holds no key of its
+ * own, so a public deploy can't be used as a proxy to someone else's credits.
+ */
+function huggingFaceFor(apiKey: string) {
+  return createHuggingFace({
+    apiKey,
+    fetch: async (input, init) =>
+      surfaceHiddenFailures(await fetch(input, init)),
+  });
+}
 
 /** The SDK masks HTTP failures ("request was rejected as invalid") — dig out
  *  what the router actually said. */
@@ -147,27 +171,27 @@ function describeError(error: unknown): string {
 }
 
 export async function POST(req: Request) {
-  const {
-    messages,
-    modelId,
-    provider,
-    reasoning,
-  }: {
-    messages: UIMessage[];
-    modelId?: string;
-    provider?: string;
-    reasoning?: boolean;
-  } = await req.json();
+  const apiKey = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!apiKey) {
+    return Response.json(
+      { error: "Add your Hugging Face token to start chatting." },
+      { status: 401 }
+    );
+  }
+
+  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid request." }, { status: 400 });
+  }
+  const { messages, modelId, provider, reasoning } = parsed.data;
 
   // Any HF hub id may arrive (users add models via search); the HF router
   // is the source of truth and rejects unknown or non-chat models.
-  if (!modelId || typeof modelId !== "string") {
-    return Response.json({ error: "modelId is required." }, { status: 400 });
-  }
-
   // A pinned provider (single-provider models) bypasses the router's
   // automatic selection, which can fail to resolve long-tail models.
-  const model = huggingFace(provider ? `${modelId}:${provider}` : modelId);
+  const model = huggingFaceFor(apiKey)(
+    provider ? `${modelId}:${provider}` : modelId
+  );
 
   // Known reasoning models stream chain-of-thought before the answer, often
   // terminated by </think> with no opening tag — hence startWithReasoning.
@@ -179,7 +203,7 @@ export async function POST(req: Request) {
         startWithReasoning: reasoning === true,
       }),
     }),
-    messages: await convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages as UIMessage[]),
     // Providers cold-start long-tail models; brief failures should self-heal.
     maxRetries: 3,
   });

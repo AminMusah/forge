@@ -98,7 +98,9 @@ function ReasoningTrigger({
             <ChevronRight className="transition-transform duration-200 group-data-open/reasoning:rotate-90" />
           )}
         </MarkerIcon>
-        <MarkerContent className={cn(isStreaming && "animate-pulse")}>
+        {/* The spinner already signals activity — a pulsing label on top of it
+            is a second motion saying the same thing. */}
+        <MarkerContent>
           {isStreaming
             ? "Thinking…"
             : duration !== null

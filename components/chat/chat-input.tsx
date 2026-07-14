@@ -39,7 +39,9 @@ function ComingSoon({
             aria-disabled
             onClick={(event) => event.preventDefault()}
             className={cn(
-              "text-muted-foreground opacity-60 hover:bg-transparent hover:text-muted-foreground",
+              // No press feedback: these controls do nothing, so they must not
+              // pretend to respond to being pressed.
+              "cursor-default text-muted-foreground opacity-60 hover:bg-transparent hover:text-muted-foreground active:translate-y-0",
               className,
             )}
           />
@@ -76,9 +78,11 @@ export function ChatInput({ onSend, autoFocus }: ChatInputProps) {
     setValue("");
   };
 
+  // The focus ring keys off the textarea rather than focus-within, so clicking
+  // the model pill or a toolbar button doesn't light the composer.
   return (
     <form
-      className="w-full rounded-[18px] border bg-card p-3 shadow-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30"
+      className="w-full rounded-[18px] border bg-card p-3 shadow-xs transition-[border-color,box-shadow] duration-150 ease-out has-[textarea:focus]:border-ring has-[textarea:focus]:ring-2 has-[textarea:focus]:ring-ring/30"
       onSubmit={(e) => {
         e.preventDefault();
         submit();

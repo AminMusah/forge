@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useModelStore } from "@/hooks/use-model-store";
+import { cn } from "@/lib/utils";
 import { searchHubModels, type HubSort } from "@/lib/hf-search";
 import { hfTasks, taskLabel, type HfTask } from "@/lib/hf-tasks";
 import type { Model } from "@/lib/types";
@@ -163,7 +164,9 @@ export default function ModelsPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading ? (
+        {/* Only show the searching state on a cold list — otherwise the results
+            stay put and dim, so the list never flashes empty mid-typing. */}
+        {loading && results.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             Searching Hugging Face…
           </p>
@@ -172,11 +175,16 @@ export default function ModelsPage() {
             No models found. Try a different search or filters.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2 pb-4">
+          <ul
+            className={cn(
+              "flex flex-col gap-2 pb-4 transition-opacity duration-150 ease-out",
+              loading && "opacity-50"
+            )}
+          >
             {results.map((model) => (
               <li
                 key={model.id}
-                className="flex items-center gap-3 rounded-lg border bg-card p-3"
+                className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors duration-150 hover:bg-muted/40"
               >
                 <div className="grid min-w-0 flex-1 leading-tight">
                   <span className="truncate text-sm font-medium">

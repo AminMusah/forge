@@ -131,3 +131,22 @@
     cursor: pointer;
   }
 }
+/* Reduced motion means gentler, not none: keep colour and opacity changes
+   (they carry meaning), drop movement and size animation. The spinner is
+   exempt — a frozen loading indicator reads as broken, not calm. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity, color, background-color, border-color, fill,
+      stroke, box-shadow !important;
+    transition-duration: 150ms !important;
+  }
+
+  [data-slot="spinner"] {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

@@ -5,10 +5,12 @@ import { Sparkles } from "reicon-react";
 
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavRecents } from "@/components/sidebar/nav-recents";
+import { TokenStatus } from "@/components/sidebar/token-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
 
@@ -28,6 +30,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain />
         <NavRecents />
       </SidebarContent>
+      <SidebarFooter>
+        <TokenStatus />
+      </SidebarFooter>
     </Sidebar>
   );
 }

@@ -2,7 +2,11 @@ import { create } from "zustand";
 
 import type { Chat } from "@/lib/types";
 
-export type ModalType = "searchChats" | "renameChat" | "deleteChat";
+export type ModalType =
+  | "searchChats"
+  | "renameChat"
+  | "deleteChat"
+  | "hfToken";
 
 export interface ModalData {
   chat?: Chat;

@@ -3,7 +3,9 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { toast } from "sonner";
 
 import { useChatStore } from "@/hooks/use-chat-store";
+import { useModal } from "@/hooks/use-modal-store";
 import { useModelStore } from "@/hooks/use-model-store";
+import { useTokenStore } from "@/hooks/use-token-store";
 import type { ChatMessage } from "@/lib/types";
 
 /**
@@ -12,6 +14,20 @@ import type { ChatMessage } from "@/lib/types";
  * useChat({ chat }).
  */
 const instances = new Map<string, Chat<UIMessage>>();
+
+/** Chats whose turn failed for want of a token, to resend once one is added. */
+const awaitingToken = new Set<string>();
+
+/**
+ * Re-sends every turn that failed because no token was set. The user message
+ * is still on the instance, so a no-arg send resubmits it.
+ */
+export function retryChatsAwaitingToken() {
+  for (const chatId of awaitingToken) {
+    void instances.get(chatId)?.sendMessage();
+  }
+  awaitingToken.clear();
+}
 
 function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
@@ -129,7 +145,19 @@ export function chatInstance(chatId: string): Chat<UIMessage> {
       useChatStore.getState().syncMessages(chatId, messages);
     },
     onError: (error) => {
-      toast.error("Reply failed", { description: error.message });
+      // A missing token is the one failure with an obvious next step: prompt
+      // for it, remember the turn, and resend it once the token lands.
+      void useTokenStore
+        .getState()
+        .refresh()
+        .then(() => {
+          if (useTokenStore.getState().hasToken) {
+            toast.error("Reply failed", { description: error.message });
+          } else {
+            awaitingToken.add(chatId);
+            useModal.getState().onOpen("hfToken");
+          }
+        });
     },
   });
   instances.set(chatId, instance);
