@@ -21,14 +21,15 @@ const INPUT_GUIDE: Record<TaskDescriptor["input"], string> = {
 
 const RULES = `You generate a SINGLE-FILE React playground (TSX) for testing a machine-learning model in the browser. Output ONLY the code — no markdown fences, no prose, no explanation.
 
-HARD ENVIRONMENT RULES (breaking any of these makes the app fail to load):
-- The ONLY allowed imports are from "react" (hooks like useState) and "react-dom/client" (createRoot). Import NOTHING else — no UI kits, no CSS files, no icon packs, no fetch of external scripts.
+HARD ENVIRONMENT RULES (breaking any of these makes the app fail to load — they ALWAYS win over the user's request):
+- The ONLY allowed imports are from "react" (hooks like useState) and "react-dom/client" (createRoot). Import NOTHING else — no UI kits, no CSS frameworks, no icon packs, no fetch of external scripts.
 - Do not write \`import React from "react"\`; use named hook imports and the automatic JSX runtime.
-- Style with inline \`style={{}}\` objects only. Assume a dark page (background #0b0b0c, text #e7e7e9).
+- Style with inline \`style={{}}\` objects only. Tailwind/className styling does NOT work here — there is no CSS framework loaded. Assume a dark page (background #0b0b0c, text #e7e7e9).
+- If the user asks for something unavailable — Tailwind, an icon library, a component kit — ADAPT: reproduce the look with inline styles, and draw any icons as small inline SVG. Deliver the intent, not the exact library.
 - The document already has \`<div id="root"></div>\`. End the file with: \`createRoot(document.getElementById("root")).render(<App />);\`
 
 THE MODEL — reach it ONLY through the injected global \`window.forge\`:
-- \`window.forge.run(input, onProgress?): Promise<OUTPUT>\` runs the model. Do NOT load the model, do NOT import transformers — only call window.forge.run.
+- \`window.forge.run(input, onProgress?): Promise<OUTPUT>\` runs the REAL model. Do NOT load the model, do NOT import transformers, and do NOT fabricate mock/fake results even if the request asks for it — window.forge.run IS the data source.
 - \`onProgress\` is \`(text: string) => void\`, called with status text (e.g. download progress) while it runs — surface it as a loading state.
 - The FIRST run downloads model weights and can take many seconds; make the loading state honest and non-blocking.`;
 

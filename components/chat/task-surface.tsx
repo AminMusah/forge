@@ -4,20 +4,23 @@ import type { ComponentType } from "react";
 
 import { ChatView } from "@/components/chat/chat-view";
 import { DescribeView } from "@/components/chat/describe-view";
+import { PlaygroundView } from "@/components/chat/playground-view";
 import { TranscribeView } from "@/components/chat/transcribe-view";
 import type { HfTask } from "@/lib/hf-tasks";
+import { descriptorFor } from "@/lib/playground/descriptors";
 import type { Model } from "@/lib/types";
 import { isSupportedVisionModel } from "@/lib/vision";
 
 /**
  * Which surface renders a chat, chosen by the task of the model it's pinned to.
- * A chat and a transcription share everything beneath this line — the store, the
- * Conversation module, the transport seam — and differ only in how they read.
  *
- * This registry is the extension point for the rest of the workspace: a new task
- * is one worker branch (browser-model.worker.ts), one transport case, and one
- * entry here. Tasks with no entry aren't offered in the first place — /models
- * only lets you pick a model whose task Forge can actually run.
+ * Two kinds of surface: a few HAND-BUILT ones (chat, transcription, image
+ * reading), and — for every other task that has a descriptor — the GENERATED
+ * PlaygroundView. That's the pivot: a new task is no longer a new component, just
+ * a descriptor. The agent writes the UI, one PlaygroundView hosts them all.
+ *
+ * The hand-built surfaces stay as the reference for what a good playground feels
+ * like; over time they can migrate to generated ones too.
  */
 const surfaces: Partial<Record<HfTask, ComponentType<{ chatId: string }>>> = {
   "text-generation": ChatView,
@@ -28,12 +31,14 @@ const surfaces: Partial<Record<HfTask, ComponentType<{ chatId: string }>>> = {
 export function surfaceFor(
   task: HfTask
 ): ComponentType<{ chatId: string }> | undefined {
-  return surfaces[task];
+  // A bespoke surface wins; otherwise any task with a descriptor gets a generated
+  // playground.
+  return surfaces[task] ?? (descriptorFor(task) ? PlaygroundView : undefined);
 }
 
-/** Tasks Forge can run today. */
+/** Tasks Forge can run today — a bespoke surface, or a descriptor-driven playground. */
 export function isSupportedTask(task: HfTask): boolean {
-  return task in surfaces;
+  return task in surfaces || descriptorFor(task) !== undefined;
 }
 
 /**
@@ -47,6 +52,12 @@ export function isRunnable(model: Model): boolean {
   if (model.task === "image-text-to-text") {
     return isSupportedVisionModel(model.id);
   }
+  // A descriptor-driven playground runs through the browser worker's generic
+  // pipeline, so it needs a browser model. Bespoke surfaces (chat) handle their
+  // own server path.
+  if (!(model.task in surfaces)) {
+    return model.runtime === "browser";
+  }
   return true;
 }
 
@@ -55,6 +66,9 @@ export function unrunnableReason(model: Model): string | undefined {
   if (isRunnable(model)) return undefined;
   if (model.task === "image-text-to-text") {
     return "Only Florence-2 models are supported for now";
+  }
+  if (isSupportedTask(model.task) && model.runtime !== "browser") {
+    return "This task only runs on browser (WebGPU) models";
   }
   return "This task isn't supported yet";
 }

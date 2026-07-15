@@ -22,9 +22,10 @@ import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 
 const bodySchema = z.object({
   task: z.enum(hfTasks as unknown as [string, ...string[]]),
-  request: z.string().max(2000).optional(),
+  // Generous: a detailed brief is a legitimate request, not abuse.
+  request: z.string().max(16000).optional(),
   previousCode: z.string().max(50000).optional(),
-  instruction: z.string().max(2000).optional(),
+  instruction: z.string().max(16000).optional(),
 });
 
 export async function POST(req: Request) {

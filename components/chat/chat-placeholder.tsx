@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ChatInput } from "@/components/chat/chat-input";
 import { FileDropzone } from "@/components/chat/file-dropzone";
 import { ModelChip } from "@/components/chat/model-chip";
+import { isSupportedTask } from "@/components/chat/task-surface";
 import { VisionTaskChip } from "@/components/chat/vision-task-chip";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
@@ -28,6 +29,10 @@ export function ChatPlaceholder() {
   const task = selectedModel.task;
   const isTranscription = task === "automatic-speech-recognition";
   const isVision = task === "image-text-to-text";
+  // Any other supported task is a generated playground: the user describes what
+  // to build, and PlaygroundView generates the UI from the task's descriptor.
+  const isPlayground =
+    isSupportedTask(task) && task !== "text-generation" && !isTranscription && !isVision;
 
   // A chat created before rehydration would be overwritten by the stored chats a
   // moment later. Hydration is a mount effect so this is all but impossible, but
@@ -39,6 +44,14 @@ export function ChatPlaceholder() {
   const handleSend = (content: string) => {
     flush();
     router.push(`/c/${startConversation(content, selectedModel.id)}`);
+  };
+
+  // A playground is just a Chat whose replies are generated UIs — create it with
+  // the request as its first turn; PlaygroundView generates from there.
+  const handleStartPlayground = (content: string) => {
+    flush();
+    const chatId = useChatStore.getState().createChat(content, selectedModel.id);
+    router.push(`/c/${chatId}`);
   };
 
   const handleFile = async (file: File) => {
@@ -63,7 +76,9 @@ export function ChatPlaceholder() {
     ? "What should I look at?"
     : isTranscription
       ? "What should I transcribe?"
-      : "How can I help you today?";
+      : isPlayground
+        ? `Build a playground to test ${selectedModel.name}`
+        : "How can I help you today?";
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
@@ -95,6 +110,13 @@ export function ChatPlaceholder() {
               <ModelChip />
             </div>
           </div>
+        ) : isPlayground ? (
+          <ChatInput
+            onSend={handleStartPlayground}
+            autoFocus
+            task={task}
+            placeholder={`Describe the playground — e.g. "let me drop an image and see the detected objects"`}
+          />
         ) : (
           <ChatInput onSend={handleSend} autoFocus />
         )}

@@ -61,4 +61,13 @@ export const defaultModels: Model[] = [
     // image-to-text models. This task exists at all because of WebGPU.
     runtime: "browser",
   },
+  {
+    id: "Xenova/detr-resnet-50",
+    name: "DETR ResNet-50 (local)",
+    description: "Detects objects in images · runs on your GPU",
+    task: "object-detection",
+    // The first playground task: no bespoke surface, its UI is generated from
+    // the object-detection descriptor. Any browser object-detection model works.
+    runtime: "browser",
+  },
 ];

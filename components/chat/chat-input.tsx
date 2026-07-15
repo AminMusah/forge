@@ -94,6 +94,7 @@ interface ChatInputProps {
    * another surface.
    */
   task?: HfTask;
+  placeholder?: string;
 }
 
 export function ChatInput({
@@ -102,6 +103,7 @@ export function ChatInput({
   isStreaming = false,
   onStop,
   task,
+  placeholder,
 }: ChatInputProps) {
   const [value, setValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -157,7 +159,7 @@ export function ChatInput({
             submit();
           }
         }}
-        placeholder="Ask anything…"
+        placeholder={placeholder ?? "Ask anything…"}
         className="w-full resize-none bg-transparent px-1 pt-1 pb-4 text-[15px] outline-none placeholder:text-muted-foreground"
       />
 
