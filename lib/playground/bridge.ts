@@ -1,3 +1,4 @@
+import { decodeToMono16k } from "@/lib/audio";
 import { getWorker } from "@/lib/browser-transport";
 import type { HfTask } from "@/lib/hf-tasks";
 import type { Dtype } from "@/lib/model-cache";
@@ -26,8 +27,26 @@ export interface PlaygroundModel {
   dtype: Dtype;
 }
 
-/** Parent-side: run the model in the warm worker, resolve with its native output. */
+/**
+ * Parent-side: run the model in the warm worker, resolve with its native output.
+ *
+ * Most tasks go through the generic `run()`. ASR is the one branch: audio needs a
+ * main-thread decode (AudioContext isn't in the worker) and the tuned transcribe
+ * path — so the bridge decodes here and posts a `transcribe` request, resolving
+ * with `{ text }` to match the descriptor.
+ */
 export function runModel(
+  model: PlaygroundModel,
+  input: RunInput,
+  onProgress?: (text: string) => void
+): Promise<unknown> {
+  if (model.task === "automatic-speech-recognition") {
+    return transcribeViaWorker(model, input, onProgress);
+  }
+  return runViaWorker(model, input, onProgress);
+}
+
+function runViaWorker(
   model: PlaygroundModel,
   input: RunInput,
   onProgress?: (text: string) => void
@@ -63,6 +82,54 @@ export function runModel(
       modelId: model.modelId,
       dtype: model.dtype,
       input,
+    } satisfies WorkerRequest);
+  });
+}
+
+async function transcribeViaWorker(
+  model: PlaygroundModel,
+  input: RunInput,
+  onProgress?: (text: string) => void
+): Promise<{ text: string }> {
+  if (!input.audio) throw new Error("No audio provided.");
+  onProgress?.("Reading audio…");
+  const audio = await decodeToMono16k(input.audio);
+
+  const worker = getWorker();
+  const id = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    // transcribe() streams the transcript as token deltas, then done.
+    let text = "";
+    const onMessage = (event: MessageEvent<WorkerResponse>) => {
+      const data = event.data;
+      if (data.id !== id) return;
+
+      switch (data.type) {
+        case "progress":
+          onProgress?.(data.text);
+          break;
+        case "token":
+          text += data.delta;
+          break;
+        case "done":
+          worker.removeEventListener("message", onMessage);
+          resolve({ text });
+          break;
+        case "error":
+          worker.removeEventListener("message", onMessage);
+          reject(new Error(data.message));
+          break;
+      }
+    };
+
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({
+      type: "transcribe",
+      id,
+      modelId: model.modelId,
+      dtype: model.dtype,
+      audio,
     } satisfies WorkerRequest);
   });
 }

@@ -17,6 +17,11 @@ export interface TaskDescriptor {
 }
 
 export const taskDescriptors: Partial<Record<HfTask, TaskDescriptor>> = {
+  "automatic-speech-recognition": {
+    input: "audio",
+    output: "{ text: string }",
+    hint: "Let the user drop or pick an audio file, show a running/loading state, then show the transcript with a copy button.",
+  },
   "object-detection": {
     input: "image",
     output:

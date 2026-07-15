@@ -6,7 +6,6 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
-import { forgetWaveform, lastFile, readAsDataUrl } from "@/lib/audio";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { splitLeakedReasoning } from "@/lib/reasoning";
 import type { ChatMessage } from "@/lib/types";
@@ -112,49 +111,31 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   const modelOf = () =>
     useModelStore.getState().models.find((m) => m.id === modelIdOf());
 
-  // The transport is chosen by (runtime × task) — and it is the ONLY thing that
-  // changes. Everything downstream (persistence, stop, the message list) is
-  // identical whether this is a chat reply from a server model or a transcript
-  // computed on the user's own GPU.
+  // conversationOf serves CHAT (text-generation) — every other task runs in a
+  // generated PlaygroundView, which reaches the model through the forge bridge,
+  // not here. So the transport is just: a browser model runs on the user's GPU,
+  // a server model goes to /api/chat. Everything downstream is identical.
   const model = modelOf();
   const task = model?.task ?? "text-generation";
   const transport =
     model?.runtime === "browser"
       ? new BrowserTransport(model.id, model.dtype, task)
-      : task === "automatic-speech-recognition"
-        ? new DefaultChatTransport<UIMessage>({
-            api: "/api/transcribe",
-            // Send the clip, not the transcript history: ASR takes one audio
-            // file, and re-uploading every previous clip as base64 would be
-            // megabytes of waste per request.
-            prepareSendMessagesRequest: ({ messages, body }) => {
-              const current = modelOf();
-              return {
-                body: {
-                  ...body,
-                  audio: lastFile(messages)?.url ?? "",
-                  modelId: modelIdOf(),
-                  provider: current?.provider,
-                },
-              };
-            },
-          })
-        : new DefaultChatTransport<UIMessage>({
-            api: "/api/chat",
-            // Resolve the model at request time so mid-chat rebinds take effect.
-            prepareSendMessagesRequest: ({ messages, body }) => {
-              const current = modelOf();
-              return {
-                body: {
-                  ...body,
-                  messages,
-                  modelId: modelIdOf(),
-                  provider: current?.provider,
-                  reasoning: current?.reasoning,
-                },
-              };
-            },
-          });
+      : new DefaultChatTransport<UIMessage>({
+          api: "/api/chat",
+          // Resolve the model at request time so mid-chat rebinds take effect.
+          prepareSendMessagesRequest: ({ messages, body }) => {
+            const current = modelOf();
+            return {
+              body: {
+                ...body,
+                messages,
+                modelId: modelIdOf(),
+                provider: current?.provider,
+                reasoning: current?.reasoning,
+              },
+            };
+          },
+        });
 
   const instance = new Chat<UIMessage>({
     id: chatId,
@@ -230,99 +211,6 @@ export function startConversation(text: string, modelId: string): string {
   return chatId;
 }
 
-/**
- * Creates a transcription from a dropped audio file and runs it. Structurally
- * this IS a chat — the user "message" is the clip, the assistant "message" is
- * the transcript — so recents, search, rename, delete and the task-grouped
- * sidebar all work with no knowledge that this turn wasn't typed.
- */
-export async function startTranscription(
-  file: File,
-  modelId: string
-): Promise<string> {
-  const chatId = useChatStore.getState().createChat(file.name, modelId, {
-    name: file.name,
-    mediaType: file.type || "audio/mpeg",
-    // Carried in memory and stripped on persist — the instance seeds from the
-    // store, so this is how the clip reaches the transport.
-    url: await readAsDataUrl(file),
-  });
-
-  // The store now holds the message; a no-arg send submits exactly that.
-  void conversationOf(chatId).sendMessage();
-  return chatId;
-}
-
-/**
- * Adds another clip to an existing transcription thread. The composer means what
- * it means everywhere else in Forge — what you drop becomes the next message.
- *
- * Note the id is the SDK's to mint, not ours: `sendMessage({ messageId })` means
- * "EDIT the existing user message with this id" (it throws if there isn't one),
- * so an id passed here would be an edit of a message that doesn't exist. The
- * clip rides on the file part instead, which needs no id at all.
- */
-export async function sendAudioToConversation(chatId: string, file: File) {
-  const url = await readAsDataUrl(file);
-  const mediaType = file.type || "audio/mpeg";
-
-  // Recorded in the store for recency and search; the instance owns the turn,
-  // and its transcript sync replaces this message with the SDK's own.
-  useChatStore
-    .getState()
-    .sendMessage(chatId, file.name, { name: file.name, mediaType, url });
-
-  void conversationOf(chatId).sendMessage({
-    files: [{ type: "file", mediaType, filename: file.name, url }],
-  });
-}
-
-/**
- * Creates a chat from an image and the question asked of it. Same shape as a
- * transcription — the file is the user's message, the model's answer is the
- * reply — except an image turn also carries TEXT: the task token that tells
- * Florence-2 whether to caption the image or read the text in it.
- */
-export async function startVisionTask(
-  file: File,
-  modelId: string,
-  prompt: string
-): Promise<string> {
-  const chatId = useChatStore.getState().createChat(
-    file.name,
-    modelId,
-    {
-      name: file.name,
-      mediaType: file.type || "image/png",
-      url: await readAsDataUrl(file),
-    },
-    prompt
-  );
-
-  void conversationOf(chatId).sendMessage();
-  return chatId;
-}
-
-/** Adds another image to an existing thread. */
-export async function sendImageToConversation(
-  chatId: string,
-  file: File,
-  prompt: string
-) {
-  const url = await readAsDataUrl(file);
-  const mediaType = file.type || "image/png";
-
-  useChatStore
-    .getState()
-    .sendMessage(chatId, file.name, { name: file.name, mediaType, url }, prompt);
-
-  void conversationOf(chatId).sendMessage({
-    // Image AND text: the token is what selects the job.
-    files: [{ type: "file", mediaType, filename: file.name, url }],
-    text: prompt,
-  });
-}
-
 /** Sends a message in an existing conversation. */
 export function sendToConversation(chatId: string, text: string) {
   // Recorded in the store for recency and search; the instance owns the stream.
@@ -343,11 +231,6 @@ export function retryPendingConversations() {
 
 /** Stops any in-flight stream and forgets the conversation (chat deleted). */
 export function evictConversation(chatId: string) {
-  // The clips go with the chat's messages; only their cached waveforms are held
-  // outside it, so release those.
-  const chat = useChatStore.getState().chats.find((c) => c.id === chatId);
-  for (const message of chat?.messages ?? []) forgetWaveform(message.id);
-
   const instance = conversations.get(chatId);
   if (!instance) return;
   void instance.stop();

@@ -1,8 +1,5 @@
 /// <reference lib="webworker" />
 import {
-  AutoProcessor,
-  AutoTokenizer,
-  Florence2ForConditionalGeneration,
   InterruptableStoppingCriteria,
   RawImage,
   TextStreamer,
@@ -47,16 +44,6 @@ export type WorkerRequest =
       dtype: Dtype;
       audio: Float32Array;
     }
-  // An image needs no such help — RawImage decodes a data URL in the worker.
-  // `prompt` is the Florence-2 task token that selects caption vs OCR.
-  | {
-      type: "describe";
-      id: string;
-      modelId: string;
-      dtype: Dtype;
-      image: string;
-      prompt: string;
-    }
   // The generic primitive behind the playground: run ANY pipeline task and hand
   // back its native output. One branch covers object-detection, classification,
   // segmentation… because pipeline() is uniform. This is what a generated UI
@@ -74,10 +61,13 @@ export type WorkerRequest =
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
   | { type: "interrupt" };
 
-/** What a generic run feeds the model. Decoded per `input` presence in the worker. */
+/** What a generic run feeds the model. Decoded per `input` presence. */
 export interface RunInput {
   /** A data URL — the worker decodes it to a RawImage. */
   image?: string;
+  /** A data URL — the BRIDGE decodes it to 16kHz samples (needs AudioContext,
+   *  which the worker lacks) and routes to the tuned transcribe path. */
+  audio?: string;
   text?: string;
   /** Passed straight through to the pipeline (e.g. object-detection `threshold`). */
   options?: Record<string, unknown>;
@@ -98,29 +88,6 @@ export interface ChatTurn {
 }
 
 /**
- * What "a loaded model" means depends on the task. Most are a pipeline — but a
- * vision-language model has NO pipeline() in transformers.js at all, so
- * Florence-2 is loaded as its own model class plus the processor and tokenizer
- * that feed it. That asymmetry is a fact about the library, not a shortcut.
- */
-/**
- * AutoProcessor is typed as the base Processor, which doesn't declare the two
- * methods Florence-2's own processor adds at runtime. These are what turn a task
- * token into the model's real prompt, and the raw generation back into an answer
- * — so name them rather than casting the whole processor to `any`.
- */
-interface Florence2Processor {
-  (image: RawImage): Promise<Record<string, unknown>>;
-  construct_prompts(task: string): string[];
-  /** imageSize is RawImage's own [width, height] tuple. */
-  post_process_generation(
-    text: string,
-    task: string,
-    imageSize: [number, number]
-  ): Record<string, unknown>;
-}
-
-/**
  * A pipeline whose task we don't special-case: object-detection, image
  * classification, and every other uniform pipeline task. Typed as a callable
  * with dispose() rather than `any`, so the generic run() and the eviction path
@@ -134,12 +101,6 @@ type GenericPipe = {
 type Loaded =
   | { kind: "text-generation"; pipe: TextGenerationPipeline }
   | { kind: "automatic-speech-recognition"; pipe: AutomaticSpeechRecognitionPipeline }
-  | {
-      kind: "image-text-to-text";
-      model: Florence2ForConditionalGeneration;
-      processor: Florence2Processor;
-      tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>;
-    }
   | { kind: "pipeline"; task: HfTask; pipe: GenericPipe };
 
 let loaded: Loaded | null = null;
@@ -153,11 +114,6 @@ const post = (message: WorkerResponse) => self.postMessage(message);
  *
  * Whisper: the encoder is the small graph and degrades badly quantized; the
  * decoder is the bulk of the weights and holds up at q4.
- *
- * Florence-2: the vision tower and the embedding table stay fp16 — quantizing
- * those is what makes a VLM confidently describe a different picture — while the
- * language encoder/decoder take the dtype. (These are the dtypes HF's own
- * Florence-2 WebGPU demo ships.) Keep in step with weightFiles().
  */
 type GraphDtype = Dtype | "fp32";
 
@@ -167,14 +123,6 @@ function dtypeFor(
 ): Dtype | Record<string, GraphDtype> {
   if (task === "automatic-speech-recognition") {
     return { encoder_model: "fp32", decoder_model_merged: dtype };
-  }
-  if (task === "image-text-to-text") {
-    return {
-      embed_tokens: "fp16",
-      vision_encoder: "fp16",
-      encoder_model: dtype,
-      decoder_model_merged: dtype,
-    };
   }
   return dtype;
 }
@@ -200,9 +148,7 @@ async function load(
   // explicitly — holding both would double the GPU memory for no benefit, since
   // the user is doing one or the other.
   if (loaded) {
-    await (loaded.kind === "image-text-to-text"
-      ? loaded.model.dispose()
-      : loaded.pipe.dispose());
+    await loaded.pipe.dispose();
     loaded = null;
     loadedKey = null;
   }
@@ -252,23 +198,7 @@ async function load(
     },
   };
 
-  if (task === "image-text-to-text") {
-    // No pipeline() for this task — the model class, the image processor and the
-    // tokenizer are loaded and driven by hand.
-    const [model, processor, tokenizer] = await Promise.all([
-      Florence2ForConditionalGeneration.from_pretrained(modelId, options),
-      AutoProcessor.from_pretrained(modelId),
-      AutoTokenizer.from_pretrained(modelId),
-    ]);
-    loaded = {
-      kind: "image-text-to-text",
-      // from_pretrained is typed as its base class; the auto-loader returns the
-      // Florence-2 subclass for a Florence-2 config.
-      model: model as Florence2ForConditionalGeneration,
-      processor: processor as unknown as Florence2Processor,
-      tokenizer,
-    };
-  } else if (task === "automatic-speech-recognition") {
+  if (task === "automatic-speech-recognition") {
     loaded = {
       kind: "automatic-speech-recognition",
       pipe: await pipeline("automatic-speech-recognition", modelId, options),
@@ -307,52 +237,6 @@ function cleanTranscript(text: string): string {
     .replace(/[[(][^\])]*[\])]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/**
- * Reads an image with Florence-2. The task token in the prompt is what selects
- * the job — the same weights caption, describe or OCR depending on it.
- */
-async function describe(request: Extract<WorkerRequest, { type: "describe" }>) {
-  const { id, modelId, dtype, image, prompt } = request;
-  const model = await load(modelId, dtype, "image-text-to-text", id);
-  if (model.kind !== "image-text-to-text") throw new Error("Wrong model loaded.");
-
-  post({ type: "progress", id, text: "Reading image…" });
-
-  // RawImage decodes the data URL here — unlike audio, an image needs no
-  // main-thread help.
-  const raw = await RawImage.fromURL(image);
-  const visionInputs = await model.processor(raw);
-  // The processor knows each task's real prompt; the token is a shorthand it
-  // expands (<OCR> becomes the model's actual OCR instruction).
-  const prompts = model.processor.construct_prompts(prompt);
-  const textInputs = model.tokenizer(prompts);
-
-  const output = await model.model.generate({
-    ...textInputs,
-    ...visionInputs,
-    max_new_tokens: 256,
-  });
-
-  // Special tokens are KEPT here on purpose: post_process_generation needs them
-  // to find the task's answer inside the generated text.
-  const decoded = model.tokenizer.batch_decode(output as never, {
-    skip_special_tokens: false,
-  })[0];
-
-  const result = model.processor.post_process_generation(
-    decoded,
-    prompt,
-    raw.size
-  ) as Record<string, unknown>;
-
-  const text = String(result[prompt] ?? "").trim();
-  if (!text) throw new Error("The model couldn't read anything in that image.");
-
-  // One shot, presented as a single delta — the transport can't tell.
-  post({ type: "token", id, delta: text });
-  post({ type: "done", id });
 }
 
 async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }>) {
@@ -477,9 +361,6 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
           break;
         case "transcribe":
           await transcribe(request);
-          break;
-        case "describe":
-          await describe(request);
           break;
         case "run":
           await run(request);

@@ -1,15 +1,8 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 
 import { useModelLoadStore } from "@/hooks/use-model-load-store";
-import {
-  computeWaveform,
-  decodeToMono16k,
-  lastFile,
-  rememberWaveform,
-} from "@/lib/audio";
 import type { HfTask } from "@/lib/hf-tasks";
 import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
-import { DEFAULT_VISION_TOKEN } from "@/lib/vision";
 import type {
   ChatTurn,
   WorkerRequest,
@@ -155,7 +148,7 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
   > {
     const worker = getWorker();
     const requestId = crypto.randomUUID();
-    const { modelId, dtype, task } = this;
+    const { modelId, dtype } = this;
 
     return new ReadableStream<UIMessageChunk>({
       start(controller) {
@@ -224,64 +217,8 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
         controller.enqueue({ type: "start" });
         controller.enqueue({ type: "start-step" });
 
-        if (task === "image-text-to-text") {
-          const image = lastFile(messages);
-          if (!image) {
-            fail("That image is no longer loaded. Drop the file again.");
-            return;
-          }
-
-          // The task token travels as the message's text — an image turn is
-          // literally image + text, which is what image-text-to-text means.
-          const prompt =
-            [...messages]
-              .reverse()
-              .find((m) => m.role === "user")
-              ?.parts.find((part) => part.type === "text")?.text ||
-            DEFAULT_VISION_TOKEN;
-
-          worker.postMessage({
-            type: "describe",
-            id: requestId,
-            modelId,
-            dtype,
-            image: image.url,
-            prompt,
-          } satisfies WorkerRequest);
-          return;
-        }
-
-        if (task === "automatic-speech-recognition") {
-          const clip = lastFile(messages);
-          if (!clip) {
-            fail("That clip is no longer loaded. Drop the file again.");
-            return;
-          }
-
-          // Decoding is main-thread work by necessity (AudioContext), and it
-          // must finish before the worker has anything to transcribe.
-          setStatus("Reading audio…");
-          void decodeToMono16k(clip.url)
-            .then((audio) => {
-              // The waveform is a by-product of a decode we were doing anyway —
-              // cache it so the player doesn't decode this clip a second time
-              // just to draw it.
-              rememberWaveform(clip.id, computeWaveform(audio));
-
-              worker.postMessage({
-                type: "transcribe",
-                id: requestId,
-                modelId,
-                dtype,
-                audio,
-              } satisfies WorkerRequest);
-            })
-            .catch((error: unknown) => {
-              fail(error instanceof Error ? error.message : String(error));
-            });
-          return;
-        }
-
+        // BrowserTransport serves CHAT only — every other task runs in a
+        // PlaygroundView through the forge bridge, not here.
         worker.postMessage({
           type: "generate",
           id: requestId,

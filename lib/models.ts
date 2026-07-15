@@ -28,37 +28,10 @@ export const defaultModels: Model[] = [
     runtime: "browser",
   },
   {
-    id: "openai/whisper-large-v3-turbo",
-    name: "Whisper Large v3 Turbo",
-    description: "Fast, high-quality transcription · needs a token",
-    task: "automatic-speech-recognition",
-    runtime: "server",
-    // hf-inference is the ONLY live provider for this model, and single-provider
-    // models fail the router's automatic selection — pin it. (v3 below is served
-    // by three, so it auto-routes and must NOT be pinned.)
-    provider: "hf-inference",
-  },
-  {
-    id: "openai/whisper-large-v3",
-    name: "Whisper Large v3",
-    description: "Best-quality transcription · needs a token",
-    task: "automatic-speech-recognition",
-    runtime: "server",
-  },
-  {
     id: "onnx-community/whisper-base",
     name: "Whisper Base (local)",
     description: "Transcribes on your GPU · the audio never leaves your machine",
     task: "automatic-speech-recognition",
-    runtime: "browser",
-  },
-  {
-    id: "onnx-community/Florence-2-base-ft",
-    name: "Florence-2 (local)",
-    description: "Captions and reads text in images · runs on your GPU",
-    task: "image-text-to-text",
-    // Browser-only by necessity, not preference: the router serves ZERO
-    // image-to-text models. This task exists at all because of WebGPU.
     runtime: "browser",
   },
   {
