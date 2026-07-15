@@ -20,8 +20,8 @@ export const taskDescriptors: Partial<Record<HfTask, TaskDescriptor>> = {
   "object-detection": {
     input: "image",
     output:
-      "Array<{ label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }>",
-    hint: "Draw each box over the image with its label and score; add a score-threshold slider.",
+      "Array<{ label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }> — the box coordinates are ABSOLUTE PIXELS in the ORIGINAL image resolution, NOT normalized 0..1.",
+    hint: "Draw each box over the displayed image with its label and score. Because the coords are in original-image pixels, position boxes as a PERCENTAGE of the image's natural size (e.g. left = box.xmin / naturalWidth * 100%), so they track the image at any display size. Add a score-threshold slider.",
   },
 };
 
