@@ -57,14 +57,39 @@ export type WorkerRequest =
       image: string;
       prompt: string;
     }
+  // The generic primitive behind the playground: run ANY pipeline task and hand
+  // back its native output. One branch covers object-detection, classification,
+  // segmentation… because pipeline() is uniform. This is what a generated UI
+  // calls (via the forge bridge) — the agent never writes inference, only the UI
+  // that renders `data`.
+  | {
+      type: "run";
+      id: string;
+      modelId: string;
+      dtype: Dtype;
+      task: HfTask;
+      input: RunInput;
+    }
   // Download and compile ahead of time, so the first message streams at once.
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
   | { type: "interrupt" };
+
+/** What a generic run feeds the model. Decoded per `input` presence in the worker. */
+export interface RunInput {
+  /** A data URL — the worker decodes it to a RawImage. */
+  image?: string;
+  text?: string;
+  /** Passed straight through to the pipeline (e.g. object-detection `threshold`). */
+  options?: Record<string, unknown>;
+}
 
 export type WorkerResponse =
   | { type: "progress"; id: string; text: string }
   | { type: "token"; id: string; delta: string }
   | { type: "done"; id: string }
+  // The whole result at once — a pipeline task's native JSON output. Distinct
+  // from `token` (streamed text): a detection result is boxes, not a stream.
+  | { type: "result"; id: string; data: unknown }
   | { type: "error"; id: string; message: string };
 
 export interface ChatTurn {
@@ -95,6 +120,17 @@ interface Florence2Processor {
   ): Record<string, unknown>;
 }
 
+/**
+ * A pipeline whose task we don't special-case: object-detection, image
+ * classification, and every other uniform pipeline task. Typed as a callable
+ * with dispose() rather than `any`, so the generic run() and the eviction path
+ * stay honest.
+ */
+type GenericPipe = {
+  (input: unknown, options?: Record<string, unknown>): Promise<unknown>;
+  dispose(): Promise<void>;
+};
+
 type Loaded =
   | { kind: "text-generation"; pipe: TextGenerationPipeline }
   | { kind: "automatic-speech-recognition"; pipe: AutomaticSpeechRecognitionPipeline }
@@ -103,7 +139,8 @@ type Loaded =
       model: Florence2ForConditionalGeneration;
       processor: Florence2Processor;
       tokenizer: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>>;
-    };
+    }
+  | { kind: "pipeline"; task: HfTask; pipe: GenericPipe };
 
 let loaded: Loaded | null = null;
 let loadedKey: string | null = null;
@@ -236,10 +273,23 @@ async function load(
       kind: "automatic-speech-recognition",
       pipe: await pipeline("automatic-speech-recognition", modelId, options),
     };
-  } else {
+  } else if (task === "text-generation") {
     loaded = {
       kind: "text-generation",
       pipe: await pipeline("text-generation", modelId, options),
+    };
+  } else {
+    // Every other pipeline task, loaded generically. `pipeline()` is typed with
+    // a literal-union first arg; a runtime-validated HfTask isn't narrowed to it,
+    // so cast — the string is a real task name either way.
+    loaded = {
+      kind: "pipeline",
+      task,
+      pipe: (await pipeline(
+        task as "object-detection",
+        modelId,
+        options
+      )) as unknown as GenericPipe,
     };
   }
 
@@ -340,6 +390,28 @@ async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }
   post({ type: "done", id });
 }
 
+/**
+ * The generic inference primitive. Runs any pipeline task and returns its native
+ * output verbatim — the shape the descriptor promises the agent. No per-task code
+ * here: decoding the input and calling the pipe is uniform.
+ */
+async function run(request: Extract<WorkerRequest, { type: "run" }>) {
+  const { id, modelId, dtype, task, input } = request;
+  const loaded = await load(modelId, dtype, task, id);
+  if (loaded.kind !== "pipeline") throw new Error("Wrong model loaded.");
+
+  post({ type: "progress", id, text: "Running…" });
+
+  // Decode to what the pipeline expects. RawImage handles a data URL in-worker
+  // (no main-thread decode, unlike audio). Text passes straight through.
+  const modelInput: unknown = input.image
+    ? await RawImage.fromURL(input.image)
+    : (input.text ?? "");
+
+  const data = await loaded.pipe(modelInput, input.options ?? {});
+  post({ type: "result", id, data });
+}
+
 async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
   const { id, modelId, dtype, messages } = request;
   const loaded = await load(modelId, dtype, "text-generation", id);
@@ -408,6 +480,9 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
           break;
         case "describe":
           await describe(request);
+          break;
+        case "run":
+          await run(request);
           break;
         case "generate":
           await generate(request);

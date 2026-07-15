@@ -1,0 +1,161 @@
+import { getWorker } from "@/lib/browser-transport";
+import type { HfTask } from "@/lib/hf-tasks";
+import type { Dtype } from "@/lib/model-cache";
+import type {
+  RunInput,
+  WorkerRequest,
+  WorkerResponse,
+} from "@/lib/browser-model.worker";
+
+/**
+ * The bridge between a generated playground (running in a sandboxed iframe) and
+ * the model (running in Forge's one warm worker).
+ *
+ * The whole reason this exists: the generated UI must reach the model WITHOUT
+ * re-downloading it or spinning a second WebGPU context. So the iframe never
+ * touches the model — it `postMessage`s `forge.run(input)` to the parent, the
+ * parent proxies to the warm worker, and the result comes back. A happy
+ * consequence: the iframe does no GPU work, so it needs no cross-origin
+ * isolation (COOP/COEP) — those only matter for WebGPU/SharedArrayBuffer, which
+ * live in the parent's worker, not here.
+ */
+
+export interface PlaygroundModel {
+  task: HfTask;
+  modelId: string;
+  dtype: Dtype;
+}
+
+/** Parent-side: run the model in the warm worker, resolve with its native output. */
+export function runModel(
+  model: PlaygroundModel,
+  input: RunInput,
+  onProgress?: (text: string) => void
+): Promise<unknown> {
+  const worker = getWorker();
+  const id = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    const onMessage = (event: MessageEvent<WorkerResponse>) => {
+      const data = event.data;
+      if (data.id !== id) return;
+
+      switch (data.type) {
+        case "progress":
+          onProgress?.(data.text);
+          break;
+        case "result":
+          worker.removeEventListener("message", onMessage);
+          resolve(data.data);
+          break;
+        case "error":
+          worker.removeEventListener("message", onMessage);
+          reject(new Error(data.message));
+          break;
+      }
+    };
+
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({
+      type: "run",
+      id,
+      task: model.task,
+      modelId: model.modelId,
+      dtype: model.dtype,
+      input,
+    } satisfies WorkerRequest);
+  });
+}
+
+/** Message envelope on the iframe↔parent channel. `__forge` namespaces it. */
+interface ForgeMessage {
+  __forge: true;
+  kind: "run" | "result" | "error" | "progress";
+  callId: string;
+  input?: RunInput;
+  data?: unknown;
+  message?: string;
+  text?: string;
+}
+
+function isForgeMessage(value: unknown): value is ForgeMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { __forge?: unknown }).__forge === true
+  );
+}
+
+/**
+ * Parent-side: proxy `forge.run()` calls from ONE playground iframe to the warm
+ * worker. Returns a teardown to detach when the playground unmounts.
+ *
+ * The iframe is sandboxed to an opaque origin, so it's identified by its window
+ * (`event.source`), not its origin (which is "null"), and replies go back with a
+ * "*" target — the only option for an opaque-origin frame.
+ */
+export function installPlaygroundBridge(
+  iframe: HTMLIFrameElement,
+  model: PlaygroundModel
+): () => void {
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== iframe.contentWindow) return;
+    if (!isForgeMessage(event.data) || event.data.kind !== "run") return;
+
+    const { callId, input } = event.data;
+    const reply = (payload: Partial<ForgeMessage>) =>
+      iframe.contentWindow?.postMessage(
+        { __forge: true, callId, ...payload },
+        "*"
+      );
+
+    runModel(model, input ?? {}, (text) => reply({ kind: "progress", text }))
+      .then((data) => reply({ kind: "result", data }))
+      .catch((error: unknown) =>
+        reply({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+        })
+      );
+  };
+
+  window.addEventListener("message", onMessage);
+  return () => window.removeEventListener("message", onMessage);
+}
+
+/**
+ * The iframe-side SDK, injected into the generated page as a `<script>`. It's the
+ * `forge` object the generated code calls. Kept as a source string because it
+ * runs in the iframe's context, not ours — the agent writes UI against
+ * `forge.run(input)` and never sees this plumbing.
+ */
+export const FORGE_SDK_SOURCE = /* js */ `
+(() => {
+  const pending = new Map();
+  // A sandboxed opaque-origin iframe doesn't always expose crypto.randomUUID.
+  const uid = () =>
+    (self.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  window.addEventListener("message", (event) => {
+    const m = event.data;
+    if (!m || m.__forge !== true || !pending.has(m.callId)) return;
+    const { resolve, reject, onProgress } = pending.get(m.callId);
+    if (m.kind === "progress") { onProgress && onProgress(m.text); return; }
+    pending.delete(m.callId);
+    if (m.kind === "result") resolve(m.data);
+    else if (m.kind === "error") reject(new Error(m.message));
+  });
+
+  window.forge = {
+    /** Run the pinned model on an input; resolves with the task's native output. */
+    run(input, onProgress) {
+      const callId = uid();
+      return new Promise((resolve, reject) => {
+        pending.set(callId, { resolve, reject, onProgress });
+        parent.postMessage({ __forge: true, kind: "run", callId, input }, "*");
+      });
+    },
+  };
+})();
+`;
