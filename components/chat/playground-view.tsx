@@ -9,7 +9,7 @@ import { useModelStore } from "@/hooks/use-model-store";
 import { installPlaygroundBridge } from "@/lib/playground/bridge";
 import { requestPlayground } from "@/lib/playground/codegen-client";
 import { compilePlayground } from "@/lib/playground/compile";
-import { buildReactSrcdoc } from "@/lib/playground/react-spike-ui";
+import { buildPlaygroundSrcdoc } from "@/lib/playground/iframe";
 import { DEFAULT_DTYPE } from "@/lib/model-cache";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -162,7 +162,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
     void compilePlayground(version.content)
       .then((js) => {
         if (cancelled) return;
-        const doc = buildReactSrcdoc(js);
+        const doc = buildPlaygroundSrcdoc(js);
         compiled.current.set(version.id, doc);
         setSrcdoc(doc);
         setStatus(null);
