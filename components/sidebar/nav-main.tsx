@@ -63,6 +63,14 @@ export function NavMain() {
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ))}
+          <SidebarMenuSubItem>
+            <SidebarMenuSubButton
+              render={<Link href="/models/downloaded" />}
+              isActive={pathname === "/models/downloaded"}
+            >
+              <span className="truncate">Downloaded</span>
+            </SidebarMenuSubButton>
+          </SidebarMenuSubItem>
         </CollapsibleMenuGroup>
       </SidebarMenu>
     </SidebarGroup>

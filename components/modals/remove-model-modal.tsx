@@ -19,7 +19,9 @@ export function RemoveModelModal() {
   const [removing, setRemoving] = React.useState(false);
 
   const open = isOpen && type === "removeModel";
-  const { model, size, onConfirm } = data;
+  const { model, size, name, location, title, description, onConfirm } = data;
+  const label = name ?? model?.name;
+  const where = location ?? "this browser";
 
   const handleRemove = async () => {
     setRemoving(true);
@@ -35,11 +37,12 @@ export function RemoveModelModal() {
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Remove downloaded model</DialogTitle>
+          <DialogTitle>{title ?? "Remove downloaded model"}</DialogTitle>
           <DialogDescription>
-            {model
-              ? `"${model.name}" will be deleted from this browser${size ? `, freeing ${size}` : ""}. You can download it again later.`
-              : "The downloaded weights will be deleted from this browser."}
+            {description ??
+              (label
+                ? `"${label}" will be deleted from ${where}${size ? `, freeing ${size}` : ""}. You can get it again later.`
+                : `The downloaded weights will be deleted from ${where}.`)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

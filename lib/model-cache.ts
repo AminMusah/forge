@@ -77,6 +77,36 @@ export async function cachedSize(
   return sizes.reduce((total, size) => total + size, 0);
 }
 
+/**
+ * Every model with weights in the cache, and its total bytes — enumerated from
+ * the cache itself (URLs → modelId), not from the catalog. So it surfaces what's
+ * ACTUALLY on disk, including models no longer in any list the user would search
+ * (orphans), which is the whole point of a storage view. Largest first.
+ */
+export async function enumerateCachedModels(): Promise<
+  { modelId: string; bytes: number }[]
+> {
+  const cache = await openCache();
+  if (!cache) return [];
+
+  const requests = await cache.keys();
+  const byModel = new Map<string, number>();
+  await Promise.all(
+    requests.map(async (request) => {
+      // https://huggingface.co/<org>/<name>/resolve/main/onnx/model_q4.onnx
+      const match = /huggingface\.co\/(.+?)\/resolve\//.exec(request.url);
+      if (!match) return;
+      const hit = await cache.match(request);
+      const bytes = hit ? await sizeOf(hit) : 0;
+      byModel.set(match[1], (byModel.get(match[1]) ?? 0) + bytes);
+    })
+  );
+
+  return Array.from(byModel, ([modelId, bytes]) => ({ modelId, bytes })).sort(
+    (a, b) => b.bytes - a.bytes
+  );
+}
+
 /** Total bytes across every locally cached model — not the whole origin. */
 export async function totalCachedSize(): Promise<number> {
   const cache = await openCache();
