@@ -5,12 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChatRoundLine,
-  Gallery2,
-  Microphone,
+  Flask,
   MoreH,
-  Notes,
   Pen2,
-  Sparkles,
   Trash5,
 } from "reicon-react";
 
@@ -33,36 +30,22 @@ import {
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { taskForModel } from "@/hooks/use-model-store";
-import { taskLabel, type HfTask } from "@/lib/hf-tasks";
 import type { Chat } from "@/lib/types";
 
-const taskIcons: Partial<
-  Record<HfTask, React.ComponentType<{ className?: string }>>
-> = {
-  "text-generation": ChatRoundLine,
-  "automatic-speech-recognition": Microphone,
-  "image-to-text": Gallery2,
-  summarization: Notes,
-};
-
 /**
- * Buckets chats by their pinned model's task. The store keeps chats
- * newest-first, so insertion order gives both group order (by most recent
- * chat) and newest-first chats within each group.
+ * Recents are split by SURFACE, not per-task: a text-generation chat is the
+ * hand-built ChatView, everything else is a generated PlaygroundView — the two
+ * real surfaces. Within each, chats stay newest-first (the store's order).
  */
-function groupChatsByTask(chats: Chat[]) {
-  const groups = new Map<HfTask, Chat[]>();
-  for (const chat of chats) {
-    const task = taskForModel(chat.modelId);
-    const bucket = groups.get(task);
-    if (bucket) bucket.push(chat);
-    else groups.set(task, [chat]);
-  }
-  return Array.from(groups, ([task, taskChats]) => ({
-    task,
-    chats: taskChats,
-  }));
-}
+type Surface = "chat" | "playground";
+
+const surfaceOf = (chat: Chat): Surface =>
+  taskForModel(chat.modelId) === "text-generation" ? "chat" : "playground";
+
+const SURFACES: { key: Surface; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "chat", label: "Chats", icon: ChatRoundLine },
+  { key: "playground", label: "Playgrounds", icon: Flask },
+];
 
 export function NavRecents() {
   const pathname = usePathname();
@@ -71,51 +54,50 @@ export function NavRecents() {
   const { onOpen } = useModal();
 
   const activeChat = chats.find((chat) => pathname === `/c/${chat.id}`);
-  const activeTask = activeChat ? taskForModel(activeChat.modelId) : null;
+  const activeSurface = activeChat ? surfaceOf(activeChat) : null;
 
-  // User toggles, plus an auto-open whenever the active chat's task changes
-  // (navigation or rebind) so the current chat never hides in a closed group.
-  const [openTasks, setOpenTasks] = React.useState<ReadonlySet<HfTask>>(
-    () => new Set(activeTask ? [activeTask] : []),
+  // User toggles, plus an auto-open whenever the active chat's surface changes
+  // so the current chat never hides in a closed group.
+  const [openSurfaces, setOpenSurfaces] = React.useState<ReadonlySet<Surface>>(
+    () => new Set(activeSurface ? [activeSurface] : [])
   );
 
   React.useEffect(() => {
-    if (!activeTask) return;
-    setOpenTasks((prev) => {
-      if (prev.has(activeTask)) return prev;
-      return new Set(prev).add(activeTask);
+    if (!activeSurface) return;
+    setOpenSurfaces((prev) => {
+      if (prev.has(activeSurface)) return prev;
+      return new Set(prev).add(activeSurface);
     });
-  }, [activeTask]);
+  }, [activeSurface]);
 
   // Stay silent until stored chats are read, rather than flashing "no chats".
   if (!hasHydrated || chats.length === 0) return null;
 
-  const setGroupOpen = (task: HfTask, open: boolean) => {
-    setOpenTasks((prev) => {
+  const setGroupOpen = (surface: Surface, open: boolean) => {
+    setOpenSurfaces((prev) => {
       const next = new Set(prev);
-      if (open) next.add(task);
-      else next.delete(task);
+      if (open) next.add(surface);
+      else next.delete(surface);
       return next;
     });
   };
-
-  const groups = groupChatsByTask(chats);
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>Recents</SidebarGroupLabel>
       <SidebarMenu>
-        {groups.map(({ task, chats: taskChats }) => {
-          const Icon = taskIcons[task] ?? Sparkles;
+        {SURFACES.map(({ key, label, icon: Icon }) => {
+          const bucket = chats.filter((chat) => surfaceOf(chat) === key);
+          if (bucket.length === 0) return null;
           return (
             <CollapsibleMenuGroup
-              key={task}
-              label={taskLabel(task)}
+              key={key}
+              label={label}
               icon={<Icon />}
-              open={openTasks.has(task)}
-              onOpenChange={(open) => setGroupOpen(task, open)}
+              open={openSurfaces.has(key)}
+              onOpenChange={(open) => setGroupOpen(key, open)}
             >
-              {taskChats.map((chat) => (
+              {bucket.map((chat) => (
                 <SidebarMenuSubItem key={chat.id}>
                   <SidebarMenuSubButton
                     render={<Link href={`/c/${chat.id}`} />}

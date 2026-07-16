@@ -3,12 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, Folder2, Library, Plus, Search } from "reicon-react";
+import { Box, Plus, Search } from "reicon-react";
 
 import { CollapsibleMenuGroup } from "@/components/sidebar/collapsible-menu-group";
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -19,11 +18,6 @@ import { useModal } from "@/hooks/use-modal-store";
 
 /** Model sources; custom and uploaded models will join Hugging Face here. */
 const modelSources = [{ name: "Hugging Face", url: "/models" }];
-
-const workspaceItems = [
-  { name: "Projects", url: "/projects", icon: Folder2 },
-  { name: "Library", url: "/library", icon: Library },
-];
 
 export function NavMain() {
   const pathname = usePathname();
@@ -39,56 +33,38 @@ export function NavMain() {
   }, [onModelsRoute]);
 
   return (
-    <>
-      <SidebarGroup>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton render={<Link href="/" />} isActive={pathname === "/"}>
-              <Plus />
-              <span>New chat</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => onOpen("searchChats")}>
-              <Search />
-              <span>Search chats</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarGroup>
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-        <SidebarMenu>
-          <CollapsibleMenuGroup
-            label="Models"
-            icon={<Box />}
-            open={modelsOpen}
-            onOpenChange={setModelsOpen}
-          >
-            {modelSources.map((source) => (
-              <SidebarMenuSubItem key={source.url}>
-                <SidebarMenuSubButton
-                  render={<Link href={source.url} />}
-                  isActive={pathname === source.url}
-                >
-                  <span className="truncate">{source.name}</span>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
-          </CollapsibleMenuGroup>
-          {workspaceItems.map((item) => (
-            <SidebarMenuItem key={item.name}>
-              <SidebarMenuButton
-                render={<Link href={item.url} />}
-                isActive={pathname === item.url}
+    <SidebarGroup>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton render={<Link href="/" />} isActive={pathname === "/"}>
+            <Plus />
+            <span>New chat</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={() => onOpen("searchChats")}>
+            <Search />
+            <span>Search chats</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <CollapsibleMenuGroup
+          label="Models"
+          icon={<Box />}
+          open={modelsOpen}
+          onOpenChange={setModelsOpen}
+        >
+          {modelSources.map((source) => (
+            <SidebarMenuSubItem key={source.url}>
+              <SidebarMenuSubButton
+                render={<Link href={source.url} />}
+                isActive={pathname === source.url}
               >
-                <item.icon />
-                <span>{item.name}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+                <span className="truncate">{source.name}</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
           ))}
-        </SidebarMenu>
-      </SidebarGroup>
-    </>
+        </CollapsibleMenuGroup>
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
