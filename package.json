@@ -2,10 +2,19 @@
   "name": "forge",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "vendor": "node scripts/vendor-deps.mjs",
+    "postinstall": "node scripts/vendor-deps.mjs",
+    "predev": "node scripts/vendor-deps.mjs",
+    "prebuild": "node scripts/vendor-deps.mjs",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.10",

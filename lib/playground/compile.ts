@@ -12,10 +12,10 @@
  * loads and compiles under Next/Turbopack, which is the unknown.
  */
 
-// Pinned to the installed esbuild-wasm so the wasm matches the JS API exactly.
-// TODO(cut-2): vendor this to /public/esbuild.wasm for a fully local compile.
-const ESBUILD_VERSION = "0.28.1";
-const ESBUILD_WASM_URL = `https://unpkg.com/esbuild-wasm@${ESBUILD_VERSION}/esbuild.wasm`;
+// Served from Forge's own origin (scripts/vendor-deps.mjs copies it from the
+// installed esbuild-wasm on postinstall), so the wasm matches the JS API exactly
+// and a public deploy doesn't depend on a CDN for its build tooling.
+const ESBUILD_WASM_URL = "/vendor/esbuild.wasm";
 
 let ready: Promise<typeof import("esbuild-wasm")> | null = null;
 
