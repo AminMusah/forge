@@ -118,3 +118,37 @@ export function isLocalBaseURL(baseURL: string): boolean {
     return false;
   }
 }
+
+/**
+ * Verify a LOCAL connection FROM THE BROWSER. A hosted server can't reach the
+ * user's localhost, so localhost endpoints are verified (and later called)
+ * client-side. Same checks the server route runs for cloud endpoints. Throws a
+ * friendly error when unreachable or the key is rejected.
+ */
+export async function verifyLocalConnection(
+  baseURL: string,
+  apiKey: string
+): Promise<void> {
+  let host: string;
+  try {
+    host = new URL(baseURL).host;
+  } catch {
+    throw new Error("That base URL isn't valid.");
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${baseURL.replace(/\/+$/, "")}/models`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    });
+  } catch {
+    throw new Error(
+      `Couldn't reach ${host}. Is the local server running, with this origin allowed (e.g. OLLAMA_ORIGINS)?`
+    );
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`That key was rejected by ${host}.`);
+  }
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`${host} rejected the connection (HTTP ${res.status}).`);
+  }
+}

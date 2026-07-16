@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   CHAT_COOKIE,
+  isLocalBaseURL,
   parseConnection,
 } from "@/lib/playground/codegen-connection";
 
@@ -16,7 +17,9 @@ import {
 
 const bodySchema = z.object({
   baseURL: z.string().url().max(500),
-  apiKey: z.string().min(1).max(400),
+  // Optional: a localhost endpoint (Ollama) needs no key. A cloud endpoint with
+  // an empty key simply fails the /models check below.
+  apiKey: z.string().max(400).optional(),
   modelId: z.string().min(1).max(200),
 });
 
@@ -40,7 +43,7 @@ export async function POST(req: Request) {
     );
   }
   const baseURL = parsed.data.baseURL.replace(/\/+$/, "");
-  const apiKey = parsed.data.apiKey.trim();
+  const apiKey = (parsed.data.apiKey ?? "").trim();
   const modelId = parsed.data.modelId.trim();
 
   let host: string;
@@ -50,32 +53,35 @@ export async function POST(req: Request) {
     return Response.json({ error: "That base URL isn't valid." }, { status: 400 });
   }
 
-  // Catch a bad key or wrong URL here, not on the user's first message. A 404
-  // means the endpoint is reachable but has no catalog (some local servers) — a
-  // soft pass.
-  let res: Response;
-  try {
-    res = await fetch(`${baseURL}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-  } catch {
-    return Response.json(
-      { error: `Couldn't reach ${host}. Check the base URL.` },
-      { status: 502 }
-    );
-  }
+  // A localhost endpoint is only reachable from the browser, not this server —
+  // the client verified it before POSTing, and the model runs client-side too.
+  // For a cloud endpoint, catch a bad key or wrong URL here, not on the first
+  // message. A 404 means reachable but no catalog (some servers) — a soft pass.
+  if (!isLocalBaseURL(baseURL)) {
+    let res: Response;
+    try {
+      res = await fetch(`${baseURL}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    } catch {
+      return Response.json(
+        { error: `Couldn't reach ${host}. Check the base URL.` },
+        { status: 502 }
+      );
+    }
 
-  if (res.status === 401 || res.status === 403) {
-    return Response.json(
-      { error: `That key was rejected by ${host}.` },
-      { status: 401 }
-    );
-  }
-  if (!res.ok && res.status !== 404) {
-    return Response.json(
-      { error: `${host} rejected the connection (HTTP ${res.status}).` },
-      { status: 502 }
-    );
+    if (res.status === 401 || res.status === 403) {
+      return Response.json(
+        { error: `That key was rejected by ${host}.` },
+        { status: 401 }
+      );
+    }
+    if (!res.ok && res.status !== 404) {
+      return Response.json(
+        { error: `${host} rejected the connection (HTTP ${res.status}).` },
+        { status: 502 }
+      );
+    }
   }
 
   const store = await cookies();

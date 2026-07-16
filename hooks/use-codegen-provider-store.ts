@@ -1,5 +1,10 @@
 import { create } from "zustand";
 
+import {
+  isLocalBaseURL,
+  verifyLocalConnection,
+} from "@/lib/playground/codegen-connection";
+
 /**
  * The user's BYO codegen connection, seen from the client. Like the HF token,
  * the apiKey lives in an httpOnly cookie the browser can't read — so we ask the
@@ -43,6 +48,11 @@ export const useCodegenProviderStore = create<CodegenProviderStore>((set) => ({
     }
   },
   save: async (conn) => {
+    // A hosted server can't reach the user's localhost, so verify a local
+    // endpoint here in the browser; the server route skips its own check for it.
+    if (isLocalBaseURL(conn.baseURL)) {
+      await verifyLocalConnection(conn.baseURL, conn.apiKey);
+    }
     const res = await fetch("/api/codegen-provider", {
       method: "POST",
       headers: { "content-type": "application/json" },

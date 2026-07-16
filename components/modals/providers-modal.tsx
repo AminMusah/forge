@@ -18,7 +18,10 @@ import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { retryPendingConversations } from "@/lib/conversation";
-import { CODEGEN_PRESETS } from "@/lib/playground/codegen-connection";
+import {
+  CODEGEN_PRESETS,
+  isLocalBaseURL,
+} from "@/lib/playground/codegen-connection";
 import { cn } from "@/lib/utils";
 
 /**
@@ -194,6 +197,12 @@ function ConnectionSection({
   }, [storedBaseURL, storedModelId]);
 
   const activePreset = CODEGEN_PRESETS.find((p) => p.baseURL === baseURL);
+  // A local endpoint (Ollama) needs no key — don't require one to save.
+  const local = isLocalBaseURL(baseURL);
+  const canSave =
+    Boolean(baseURL.trim()) &&
+    Boolean(modelId.trim()) &&
+    (local || Boolean(apiKey.trim()));
 
   const applyPreset = (value: string) => {
     const preset = CODEGEN_PRESETS.find((p) => p.baseURL === value);
@@ -203,7 +212,7 @@ function ConnectionSection({
   };
 
   const handleSave = async () => {
-    if (!baseURL.trim() || !apiKey.trim() || !modelId.trim()) return;
+    if (!canSave) return;
     setSaving(true);
     try {
       await onSave({
@@ -272,7 +281,7 @@ function ConnectionSection({
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={activePreset?.local ? "no key needed" : "API key"}
+            placeholder={local ? "no key needed" : "API key"}
             autoComplete="off"
           />
           {hasProvider && (
@@ -280,10 +289,7 @@ function ConnectionSection({
               Remove
             </Button>
           )}
-          <Button
-            type="submit"
-            disabled={!baseURL.trim() || !apiKey.trim() || !modelId.trim() || saving}
-          >
+          <Button type="submit" disabled={!canSave || saving}>
             {saving ? "Verifying…" : "Save"}
           </Button>
         </div>

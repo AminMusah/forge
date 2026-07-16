@@ -2,11 +2,14 @@ import { Chat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { toast } from "sonner";
 
+import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { chatConnectionModel, useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { BrowserTransport } from "@/lib/browser-transport";
+import { LocalChatTransport } from "@/lib/local-chat-transport";
+import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
 import { splitLeakedReasoning } from "@/lib/reasoning";
 import type { ChatMessage } from "@/lib/types";
 
@@ -126,8 +129,15 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   // router). Downstream is identical.
   const model = modelOf();
   const task = model?.task ?? "text-generation";
+  // A localhost chat provider must run client-side — a hosted server can't reach
+  // the user's machine — so it gets its own transport, like a browser model.
+  const chatIsLocal =
+    model?.chatConnection &&
+    isLocalBaseURL(useChatProviderStore.getState().baseURL ?? "");
   const transport = model?.runtime === "browser"
     ? new BrowserTransport(model.id, model.dtype, task)
+    : chatIsLocal
+    ? new LocalChatTransport(model?.reasoning === true)
     : model?.chatConnection
       ? new DefaultChatTransport<UIMessage>({
           api: "/api/chat-byo",

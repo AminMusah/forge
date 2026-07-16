@@ -1,5 +1,10 @@
 import { create } from "zustand";
 
+import {
+  isLocalBaseURL,
+  verifyLocalConnection,
+} from "@/lib/playground/codegen-connection";
+
 /**
  * The user's BYO chat connection, seen from the client. Mirrors
  * use-codegen-provider-store: the apiKey lives in an httpOnly cookie, so we ask
@@ -42,6 +47,11 @@ export const useChatProviderStore = create<ChatProviderStore>((set) => ({
     }
   },
   save: async (conn) => {
+    // A hosted server can't reach the user's localhost, so verify a local
+    // endpoint here in the browser; the server route skips its own check for it.
+    if (isLocalBaseURL(conn.baseURL)) {
+      await verifyLocalConnection(conn.baseURL, conn.apiKey);
+    }
     const res = await fetch("/api/chat-provider", {
       method: "POST",
       headers: { "content-type": "application/json" },
