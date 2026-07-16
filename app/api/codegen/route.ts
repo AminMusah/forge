@@ -2,13 +2,16 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { generateText } from "ai";
 
-import { TOKEN_COOKIE } from "@/app/api/token/route";
 import { describeError } from "@/lib/hf-router";
 import {
   buildCodegenPrompt,
   extractCode,
 } from "@/lib/playground/codegen-prompt";
 import { codegenModel } from "@/lib/playground/codegen-provider";
+import {
+  CODEGEN_COOKIE,
+  parseCodegenConnection,
+} from "@/lib/playground/codegen-connection";
 import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 
@@ -29,13 +32,15 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Codegen picks its own provider (Groq's free tier first); the HF cookie is
-  // only a fallback, so a missing HF token isn't fatal when Groq is configured.
-  const hfToken = (await cookies()).get(TOKEN_COOKIE)?.value;
-  const codegen = codegenModel({ hfToken });
+  // The user's BYO connection wins outright; the shared GROQ_API_KEY is the
+  // on-ramp for users who haven't brought one. codegenModel() encodes the order.
+  const connection = parseCodegenConnection(
+    (await cookies()).get(CODEGEN_COOKIE)?.value
+  );
+  const codegen = codegenModel({ connection });
   if (!codegen) {
     return Response.json(
-      { error: "No codegen provider configured (set GROQ_API_KEY or add an HF token)." },
+      { error: "Add a codegen provider to generate playgrounds." },
       { status: 401 }
     );
   }

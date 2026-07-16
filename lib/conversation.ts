@@ -180,7 +180,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
             toast.error("Reply failed", { description: error.message });
           } else {
             awaitingToken.add(chatId);
-            useModal.getState().onOpen("hfToken");
+            useModal.getState().onOpen("providers");
           }
         });
     },

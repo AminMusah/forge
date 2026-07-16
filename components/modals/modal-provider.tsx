@@ -3,21 +3,25 @@
 import * as React from "react";
 
 import { DeleteChatModal } from "@/components/modals/delete-chat-modal";
-import { HfTokenModal } from "@/components/modals/hf-token-modal";
+import { ProvidersModal } from "@/components/modals/providers-modal";
 import { RemoveModelModal } from "@/components/modals/remove-model-modal";
 import { RenameChatModal } from "@/components/modals/rename-chat-modal";
 import { SearchChatsModal } from "@/components/modals/search-chats-modal";
+import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 
 export function ModalProvider() {
   const [mounted, setMounted] = React.useState(false);
-  const refresh = useTokenStore((state) => state.refresh);
+  const refreshToken = useTokenStore((state) => state.refresh);
+  const refreshCodegen = useCodegenProviderStore((state) => state.refresh);
 
   React.useEffect(() => {
     setMounted(true);
-    // The token cookie is httpOnly, so only the server can tell us it exists.
-    void refresh();
-  }, [refresh]);
+    // Both credentials live in httpOnly cookies, so only the server can tell us
+    // whether they're set.
+    void refreshToken();
+    void refreshCodegen();
+  }, [refreshToken, refreshCodegen]);
 
   if (!mounted) return null;
 
@@ -26,7 +30,7 @@ export function ModalProvider() {
       <SearchChatsModal />
       <RenameChatModal />
       <DeleteChatModal />
-      <HfTokenModal />
+      <ProvidersModal />
       <RemoveModelModal />
     </>
   );

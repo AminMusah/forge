@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { HfTask } from "@/lib/hf-tasks";
-import { defaultModels } from "@/lib/models";
+import { defaultChatModel, defaultModels } from "@/lib/models";
 import type { Model } from "@/lib/types";
 
 interface ModelStore {
@@ -32,7 +32,7 @@ export const useModelStore = create<ModelStore>()(
   persist(
     (set) => ({
       models: defaultModels,
-      selectedModel: defaultModels[0],
+      selectedModel: defaultChatModel,
       setModel: (model) => set({ selectedModel: model }),
       addModel: (model) =>
         set((state) => ({
@@ -66,10 +66,10 @@ export const useModelStore = create<ModelStore>()(
         const stored = persisted as Partial<ModelStore> | undefined;
         const models = mergeModels(stored?.models ?? []);
         // A selected model that no longer exists (or was never stored) falls
-        // back to the first default rather than leaving the chip blank.
+        // back to the local default rather than leaving the chip blank.
         const selected =
           models.find((m) => m.id === stored?.selectedModel?.id) ??
-          defaultModels[0];
+          defaultChatModel;
         return { ...current, models, selectedModel: selected };
       },
     }

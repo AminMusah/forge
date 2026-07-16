@@ -44,3 +44,14 @@ export const defaultModels: Model[] = [
     runtime: "browser",
   },
 ];
+
+/**
+ * What a fresh user lands on in chat. Deliberately the LOCAL model: it needs no
+ * credentials, so it's the one chat that works on first open — cloud models are
+ * strict-BYO and would 401 without a token. Local-open is the point; cloud is a
+ * step-up. (Existing users keep their persisted selection; this is the default
+ * only for someone with no stored choice.)
+ */
+export const defaultChatModel: Model =
+  defaultModels.find((m) => m.runtime === "browser" && m.task === "text-generation") ??
+  defaultModels[0];

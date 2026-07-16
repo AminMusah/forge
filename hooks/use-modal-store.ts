@@ -6,7 +6,7 @@ export type ModalType =
   | "searchChats"
   | "renameChat"
   | "deleteChat"
-  | "hfToken"
+  | "providers"
   | "removeModel";
 
 export interface ModalData {
