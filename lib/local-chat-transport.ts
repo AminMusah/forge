@@ -11,6 +11,7 @@ import {
 } from "ai";
 
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
+import { friendlyLocalError } from "@/lib/local-errors";
 import { THINK_TAG } from "@/lib/reasoning";
 
 /**
@@ -62,7 +63,7 @@ export class LocalChatTransport implements ChatTransport<UIMessage> {
     return toUIMessageStream({
       stream: result.stream,
       sendReasoning: true,
-      onError: (error) => (error instanceof Error ? error.message : String(error)),
+      onError: friendlyLocalError,
     });
   }
 

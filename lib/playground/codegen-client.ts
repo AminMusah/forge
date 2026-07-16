@@ -3,6 +3,7 @@ import { generateText } from "ai";
 
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import type { HfTask } from "@/lib/hf-tasks";
+import { friendlyLocalError } from "@/lib/local-errors";
 import {
   buildCodegenPrompt,
   extractCode,
@@ -31,19 +32,26 @@ export interface CodegenRequest {
   instruction?: string;
 }
 
-export async function requestPlayground(body: CodegenRequest): Promise<string> {
+export async function requestPlayground(
+  body: CodegenRequest,
+  signal?: AbortSignal
+): Promise<string> {
   const { hasProvider, baseURL, modelId } = useCodegenProviderStore.getState();
   if (hasProvider && baseURL && modelId && isLocalBaseURL(baseURL)) {
-    return requestLocal(body, baseURL, modelId);
+    return requestLocal(body, baseURL, modelId, signal);
   }
-  return requestServer(body);
+  return requestServer(body, signal);
 }
 
-async function requestServer(body: CodegenRequest): Promise<string> {
+async function requestServer(
+  body: CodegenRequest,
+  signal?: AbortSignal
+): Promise<string> {
   const res = await fetch("/api/codegen", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Codegen failed.");
@@ -54,7 +62,8 @@ async function requestServer(body: CodegenRequest): Promise<string> {
 async function requestLocal(
   body: CodegenRequest,
   baseURL: string,
-  modelId: string
+  modelId: string,
+  signal?: AbortSignal
 ): Promise<string> {
   const descriptor = descriptorFor(body.task as HfTask);
   if (!descriptor) throw new Error(`No playground descriptor for ${body.task}.`);
@@ -74,15 +83,26 @@ async function requestLocal(
     apiKey: "local",
   })(modelId);
 
-  const { text } = await generateText({
-    model,
-    system,
-    prompt,
-    maxOutputTokens: 4000,
-    maxRetries: 1,
-  });
+  try {
+    // A cap bounds a runaway — a reasoning model (e.g. gpt-oss) can otherwise
+    // "think" for many thousands of tokens and never stop. 8000 still leaves
+    // ample room for a single-file playground (~2-4k) plus its reasoning; raise
+    // it if a large generation truncates. (The Stop button is the manual escape.)
+    const { text } = await generateText({
+      model,
+      system,
+      prompt,
+      maxOutputTokens: 8000,
+      maxRetries: 1,
+      abortSignal: signal,
+    });
 
-  const code = extractCode(text);
-  if (!code) throw new Error("The model returned no code.");
-  return code;
+    const code = extractCode(text);
+    if (!code) throw new Error("The model returned no code.");
+    return code;
+  } catch (error) {
+    // Let an abort surface as-is so the caller can tell "stopped" from "failed".
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new Error(friendlyLocalError(error));
+  }
 }

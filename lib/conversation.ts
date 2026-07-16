@@ -177,9 +177,13 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
         useModelStore.getState().markReasoning(modelId);
       }
 
-      // Router failures that end the stream without an error event leave no
-      // assistant text behind — an empty reply is the only symptom.
-      if (last?.role !== "assistant" || !last.content) {
+      // Router failures that end the stream WITHOUT an error event leave no
+      // assistant text behind — an empty reply is the only symptom, and only the
+      // HF router does this. Browser and BYO transports surface real errors via
+      // onError, so gating here avoids a confusing second toast on those paths.
+      const m = modelOf();
+      const hfServer = m?.runtime !== "browser" && !m?.chatConnection;
+      if (hfServer && (last?.role !== "assistant" || !last.content)) {
         toast.error("The model returned no response", {
           description: "Try sending again, or pick a different model.",
         });

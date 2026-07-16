@@ -120,6 +120,30 @@ export function isLocalBaseURL(baseURL: string): boolean {
 }
 
 /**
+ * List the models an OpenAI-compatible endpoint has, from the browser. Used to
+ * populate the model picker for LOCAL (Ollama) endpoints — the server can't
+ * reach the user's localhost, but the browser can, and CORS is open there.
+ * Returns [] on any failure (the field falls back to free-text).
+ */
+export async function listLocalModels(
+  baseURL: string,
+  apiKey: string
+): Promise<string[]> {
+  try {
+    const res = await fetch(`${baseURL.replace(/\/+$/, "")}/models`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data?: { id?: string }[] };
+    return (body.data ?? [])
+      .map((m) => m.id)
+      .filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Verify a LOCAL connection FROM THE BROWSER. A hosted server can't reach the
  * user's localhost, so localhost endpoints are verified (and later called)
  * client-side. Same checks the server route runs for cloud endpoints. Throws a

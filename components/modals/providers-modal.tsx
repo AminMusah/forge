@@ -21,6 +21,7 @@ import { retryPendingConversations } from "@/lib/conversation";
 import {
   CODEGEN_PRESETS,
   isLocalBaseURL,
+  listLocalModels,
 } from "@/lib/playground/codegen-connection";
 import { cn } from "@/lib/utils";
 
@@ -188,6 +189,8 @@ function ConnectionSection({
   const [modelId, setModelId] = React.useState("");
   const [apiKey, setApiKey] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [localModels, setLocalModels] = React.useState<string[]>([]);
+  const listId = React.useId();
 
   // Prefill from what's stored, else the first (Groq) preset.
   React.useEffect(() => {
@@ -199,6 +202,32 @@ function ConnectionSection({
   const activePreset = CODEGEN_PRESETS.find((p) => p.baseURL === baseURL);
   // A local endpoint (Ollama) needs no key — don't require one to save.
   const local = isLocalBaseURL(baseURL);
+
+  // Discover installed models for a LOCAL endpoint (the server can't reach the
+  // user's localhost, but the browser can). Seed the field with a real installed
+  // model so the blind preset default can't cause a "model not found" on first
+  // use. Debounced against base-URL typing; auth isn't needed for Ollama.
+  React.useEffect(() => {
+    if (!local || !baseURL) {
+      setLocalModels([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const ids = await listLocalModels(baseURL, "");
+      if (cancelled) return;
+      setLocalModels(ids);
+      if (ids.length > 0) {
+        // Keep a valid choice; replace a not-installed id (e.g. the preset
+        // default) with the first installed one.
+        setModelId((prev) => (ids.includes(prev) ? prev : ids[0]));
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [local, baseURL]);
   const canSave =
     Boolean(baseURL.trim()) &&
     Boolean(modelId.trim()) &&
@@ -272,10 +301,18 @@ function ConnectionSection({
         <Input
           value={modelId}
           onChange={(e) => setModelId(e.target.value)}
-          placeholder="model id"
+          placeholder={local && localModels.length ? "pick or type a model" : "model id"}
           autoComplete="off"
           spellCheck={false}
+          list={localModels.length ? listId : undefined}
         />
+        {localModels.length > 0 && (
+          <datalist id={listId}>
+            {localModels.map((id) => (
+              <option key={id} value={id} />
+            ))}
+          </datalist>
+        )}
         <div className="flex gap-2">
           <Input
             type="password"

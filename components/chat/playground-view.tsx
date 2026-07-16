@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ArrowsRotate } from "reicon-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const compiled = React.useRef(new Map<string, string>());
   const startedRef = React.useRef(false);
+  const abortRef = React.useRef<AbortController | null>(null);
 
   const [current, setCurrent] = React.useState<string | null>(null);
   const [srcdoc, setSrcdoc] = React.useState<string | null>(null);
@@ -81,7 +83,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
 
   /** Compile; on failure, feed the error back to the model up to MAX_FIX times. */
   const settle = React.useCallback(
-    async (task: string, fresh: string): Promise<string> => {
+    async (task: string, fresh: string, signal: AbortSignal): Promise<string> => {
       let code = fresh;
       for (let attempt = 0; ; attempt++) {
         try {
@@ -93,11 +95,14 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
             compileError instanceof Error ? compileError.message : String(compileError);
           if (attempt >= MAX_FIX) throw new Error(`Still failing after ${MAX_FIX} fixes: ${msg}`);
           setStatus(`Auto-fixing compile error (${attempt + 1}/${MAX_FIX})…`);
-          code = await requestPlayground({
-            task,
-            previousCode: code,
-            instruction: `The code failed to compile with this error:\n${msg}\n\nReturn the corrected full file.`,
-          });
+          code = await requestPlayground(
+            {
+              task,
+              previousCode: code,
+              instruction: `The code failed to compile with this error:\n${msg}\n\nReturn the corrected full file.`,
+            },
+            signal
+          );
         }
       }
     },
@@ -110,25 +115,35 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
       userTurn: string | null
     ) => {
       if (!model) return;
+      const controller = new AbortController();
+      abortRef.current = controller;
       setBusy(true);
       setError(null);
       try {
         setStatus("Generating…");
-        const code = await settle(model.task, await requestPlayground(body));
+        const fresh = await requestPlayground(body, controller.signal);
+        const code = await settle(model.task, fresh, controller.signal);
         const assistant = message("assistant", code);
         appendTurns(
           userTurn ? [message("user", userTurn), assistant] : [assistant]
         );
         setCurrent(assistant.id);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        setStatus(null);
+        // Stop leaves the previous version intact — not an error.
+        if (controller.signal.aborted) setStatus("Stopped");
+        else {
+          setError(e instanceof Error ? e.message : String(e));
+          setStatus(null);
+        }
       } finally {
         setBusy(false);
+        abortRef.current = null;
       }
     },
     [model, settle, appendTurns]
   );
+
+  const stop = () => abortRef.current?.abort();
 
   // Generate the first version when a freshly-created playground has none yet.
   // Not on reload: a chat that already has a version just compiles it below.
@@ -215,22 +230,34 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col gap-2 px-4 py-4">
-        {versions.length > 1 && (
-          <div className="flex flex-wrap gap-1.5">
-            {versions.map((v, i) => (
-              <button
-                key={v.id}
-                onClick={() => setCurrent(v.id)}
-                className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                  v.id === current
-                    ? "border-ring bg-muted"
-                    : "text-muted-foreground hover:bg-muted/50"
-                )}
-              >
-                v{i + 1}
-              </button>
-            ))}
+        {versions.length >= 1 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {versions.length > 1 &&
+              versions.map((v, i) => (
+                <button
+                  key={v.id}
+                  onClick={() => setCurrent(v.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                    v.id === current
+                      ? "border-ring bg-muted"
+                      : "text-muted-foreground hover:bg-muted/50"
+                  )}
+                >
+                  v{i + 1}
+                </button>
+              ))}
+            {/* Regenerate re-runs the ORIGINAL prompt for a fresh version — no
+                new input, so it lives here by the versions, not in the composer. */}
+            <button
+              onClick={regenerate}
+              disabled={busy || !firstRequest}
+              title="Regenerate from the original prompt"
+              aria-label="Regenerate"
+              className="ml-auto inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ArrowsRotate className="size-3.5" />
+            </button>
           </div>
         )}
 
@@ -274,12 +301,15 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
             placeholder="Change the playground — e.g. make the boxes red, show a count…"
             className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
           />
-          <Button variant="outline" size="sm" onClick={regenerate} disabled={busy}>
-            Regenerate
-          </Button>
-          <Button size="sm" onClick={modify} disabled={busy || !instruction.trim()}>
-            Modify
-          </Button>
+          {busy ? (
+            <Button variant="outline" size="sm" onClick={stop}>
+              Stop
+            </Button>
+          ) : (
+            <Button size="sm" onClick={modify} disabled={!instruction.trim()}>
+              Modify
+            </Button>
+          )}
         </div>
       </div>
     </div>
