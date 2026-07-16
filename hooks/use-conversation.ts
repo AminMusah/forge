@@ -7,9 +7,9 @@ import {
   conversationOf,
   sendToConversation,
   syncTranscript,
-  toChatMessages,
+  transcriptOf,
 } from "@/lib/conversation";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, MessageFile } from "@/lib/types";
 
 interface UseConversation {
   /** The transcript, including a placeholder row while awaiting first tokens. */
@@ -17,7 +17,7 @@ interface UseConversation {
   /** Id of the message currently streaming, if any. */
   streamingId?: string;
   isStreaming: boolean;
-  send: (text: string) => void;
+  send: (text: string, file?: MessageFile) => void;
   stop: () => void;
   regenerate: () => void;
 }
@@ -40,7 +40,10 @@ export function useConversation(chatId: string): UseConversation {
 
   // Converted once per token and reused by both the persist effect and the
   // render — this is the hot path, so don't do the work twice.
-  const transcript = useMemo(() => toChatMessages(uiMessages), [uiMessages]);
+  const transcript = useMemo(
+    () => transcriptOf(chatId, uiMessages),
+    [chatId, uiMessages]
+  );
 
   useEffect(() => {
     if (transcript.length === 0) return;
@@ -57,7 +60,7 @@ export function useConversation(chatId: string): UseConversation {
   }, [transcript, status]);
 
   const send = useCallback(
-    (text: string) => sendToConversation(chatId, text),
+    (text: string, file?: MessageFile) => sendToConversation(chatId, text, file),
     [chatId]
   );
   const handleStop = useCallback(() => void stop(), [stop]);

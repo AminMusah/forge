@@ -65,6 +65,7 @@ export function ChatView({ chatId }: ChatViewProps) {
         <ChatInput
           onSend={send}
           autoFocus
+          attachments
           isStreaming={isStreaming}
           onStop={stop}
           // A chat can only be re-pinned to another chat model — an ASR model

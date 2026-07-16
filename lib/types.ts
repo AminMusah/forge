@@ -41,21 +41,19 @@ export interface Model {
 
 export type MessageRole = "user" | "assistant";
 
-/** An audio file the user submitted for transcription. */
+/** A file the user attached to a message (see lib/attachments.ts). */
 export interface MessageFile {
   name: string;
+  /** What the browser claimed the type was — unreliable for source files. */
   mediaType: string;
   /**
-   * The clip itself, as a data URL — held in memory and STRIPPED before the
-   * store is persisted (see the chat store's partialize).
-   *
-   * It must never reach localStorage: that's a ~5MB quota with no pruning, and
-   * one base64'd recording would blow it for EVERY chat, not just this one. So
-   * a clip survives navigation but not a reload, and `url` is undefined for any
-   * message read back from storage — which is exactly what tells the view to
-   * hide the player.
+   * The file read as text, inlined into the prompt at send time. Persisted with
+   * the chat: it IS the transcript, so dropping it on reload would leave the
+   * assistant answering a question no longer on screen. Safe to persist only
+   * because extraction is capped (MAX_ATTACHMENT_CHARS) — an uncapped field here
+   * would blow the ~5MB localStorage quota for EVERY chat, not just this one.
    */
-  url?: string;
+  text: string;
 }
 
 export interface ChatMessage {
@@ -64,7 +62,7 @@ export interface ChatMessage {
   content: string;
   /** Chain-of-thought, rendered in a collapsible panel above the answer. */
   reasoning?: string;
-  /** Set on a user message that submitted a file (an audio clip to transcribe). */
+  /** Set on a user message that attached a file. `content` stays what was typed. */
   file?: MessageFile;
 }
 

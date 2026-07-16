@@ -7,6 +7,7 @@ import { isSupportedTask } from "@/components/chat/task-surface";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { startConversation } from "@/lib/conversation";
+import type { MessageFile } from "@/lib/types";
 
 export function ChatPlaceholder() {
   const router = useRouter();
@@ -25,9 +26,9 @@ export function ChatPlaceholder() {
     if (!hasHydrated) void useChatStore.persist.rehydrate();
   };
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, file?: MessageFile) => {
     flush();
-    router.push(`/c/${startConversation(content, selectedModel.id)}`);
+    router.push(`/c/${startConversation(content, selectedModel.id, file)}`);
   };
 
   // A playground is just a Chat whose replies are generated UIs — create it with
@@ -57,7 +58,7 @@ export function ChatPlaceholder() {
             placeholder={`Describe the playground — e.g. "let me drop a file and see the model's output"`}
           />
         ) : (
-          <ChatInput onSend={handleSend} autoFocus />
+          <ChatInput onSend={handleSend} autoFocus attachments />
         )}
       </div>
     </div>

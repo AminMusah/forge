@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, Refresh } from "reicon-react";
+import { Check, Copy, DocumentText2, Refresh } from "reicon-react";
 
 import { Markdown } from "@/components/chat/markdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -22,6 +22,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ui/reasoning";
+import { formatTextSize } from "@/lib/attachments";
 import type { ChatMessage } from "@/lib/types";
 
 interface MessageListProps {
@@ -122,12 +123,25 @@ const MessageRow = React.memo(function MessageRow({
       >
         <MessageContent>
           {message.role === "user" ? (
-            // Users type literally — never parse their asterisks as markdown.
-            <Bubble variant="muted">
-              <BubbleContent className="whitespace-pre-wrap text-sm/relaxed">
-                {message.content}
-              </BubbleContent>
-            </Bubble>
+            <div className="flex flex-col items-end gap-1.5">
+              {/* The file's text went to the model, not the screen: rendering it
+                  would bury the question under its own context. */}
+              {message.file && (
+                <div className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1 text-xs">
+                  <DocumentText2 className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{message.file.name}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {formatTextSize(message.file.text)}
+                  </span>
+                </div>
+              )}
+              {/* Users type literally — never parse their asterisks as markdown. */}
+              <Bubble variant="muted">
+                <BubbleContent className="whitespace-pre-wrap text-sm/relaxed">
+                  {message.content}
+                </BubbleContent>
+              </Bubble>
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
               {message.reasoning && (
@@ -161,6 +175,7 @@ const MessageRow = React.memo(function MessageRow({
   prev.message.id === next.message.id &&
   prev.message.content === next.message.content &&
   prev.message.reasoning === next.message.reasoning &&
+  prev.message.file?.name === next.message.file?.name &&
   prev.onRegenerate === next.onRegenerate);
 
 export function MessageList({

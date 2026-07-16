@@ -7,11 +7,12 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { chatConnectionModel, useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
+import { composeWithFile } from "@/lib/attachments";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { LocalChatTransport } from "@/lib/local-chat-transport";
 import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
 import { splitLeakedReasoning } from "@/lib/reasoning";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, MessageFile } from "@/lib/types";
 
 /**
  * A conversation is one chat's turn lifecycle: sending, streaming, stopping,
@@ -28,6 +29,15 @@ const conversations = new Map<string, Chat<UIMessage>>();
 /** Turns that failed for want of a token, resent once one is added. */
 const awaitingToken = new Set<string>();
 
+/**
+ * Store → model. An attachment is inlined into the text part rather than emitted
+ * as a file part: every chat model here is text-generation, and a file part would
+ * reach three transports that would each have to decide what to do with a
+ * text/plain data URL. Inlining means none of them ever sees a file.
+ *
+ * The composed text is therefore what the MODEL reads, never what the view
+ * renders — see syncTranscript for why that stays true.
+ */
 function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
     id: m.id,
@@ -36,28 +46,20 @@ function toUIMessages(messages: ChatMessage[]): UIMessage[] {
       ...(m.reasoning
         ? [{ type: "reasoning" as const, text: m.reasoning }]
         : []),
-      // A clip read back from storage has no url — the bytes are stripped when
-      // the store is persisted. The transcript is what was worth keeping; the
-      // part is still emitted so the view can name the file that produced it.
-      ...(m.file
+      ...(m.content
         ? [
             {
-              type: "file" as const,
-              mediaType: m.file.mediaType,
-              filename: m.file.name,
-              url: m.file.url ?? "",
+              type: "text" as const,
+              text: m.file ? composeWithFile(m.content, m.file) : m.content,
             },
           ]
         : []),
-      // A file-only message has no text; an empty text part is not the same as
-      // no text part to convertToModelMessages.
-      ...(m.content ? [{ type: "text" as const, text: m.content }] : []),
     ],
   }));
 }
 
 /** Flattens UI messages (parts) into the store's plain-text shape. */
-export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
+function toChatMessages(messages: UIMessage[]): ChatMessage[] {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
@@ -68,21 +70,13 @@ export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
         .map((part) => (part.type === "reasoning" ? part.text : ""))
         .join("");
 
+      // A user message's text here may be the file-composed form (toUIMessages),
+      // so it is NOT authoritative — syncTranscript keeps the stored original.
       if (m.role !== "assistant") {
-        // The url rides along in memory; the store strips it before persisting.
-        const filePart = m.parts.find((part) => part.type === "file");
-        const file = filePart
-          ? {
-              name: filePart.filename ?? "file",
-              mediaType: filePart.mediaType,
-              url: filePart.url || undefined,
-            }
-          : undefined;
         return {
           id: m.id,
           role: m.role as ChatMessage["role"],
           content: text,
-          ...(file ? { file } : {}),
         };
       }
       // Reasoning parts from the server win; otherwise look for a leak.
@@ -167,7 +161,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
     messages: toUIMessages(stored?.messages ?? []),
     transport,
     onFinish: () => {
-      const messages = toChatMessages(instance.messages);
+      const messages = transcriptOf(chatId, instance.messages);
       const last = messages.at(-1);
 
       // Reasoning that leaked into the text means the server didn't know this
@@ -222,6 +216,31 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
 }
 
 /**
+ * The transcript as the view and the store should both see it: assistant turns
+ * from the SDK, user turns from the STORE.
+ *
+ * A user turn's SDK copy is the form built for the MODEL — the file's text
+ * inlined by toUIMessages, the MessageFile itself gone. Rendering that would
+ * show the user their own prompt payload instead of what they typed, and
+ * persisting it would make that permanent. The store is where user turns are
+ * authored (sendToConversation writes one before submitting), so it wins.
+ * Matching by id keeps regenerate's truncation working: a turn the SDK has
+ * dropped is simply not in the list to restore.
+ */
+export function transcriptOf(
+  chatId: string,
+  messages: UIMessage[]
+): ChatMessage[] {
+  const stored = useChatStore.getState().chats.find((c) => c.id === chatId);
+  const authored = new Map(
+    stored?.messages.filter((m) => m.role === "user").map((m) => [m.id, m])
+  );
+  return toChatMessages(messages).map((m) =>
+    m.role === "user" ? (authored.get(m.id) ?? m) : m
+  );
+}
+
+/**
  * Records the transcript as it streams, so a reload mid-reply keeps what
  * arrived. The store write is cheap; its localStorage flush is debounced.
  */
@@ -234,19 +253,30 @@ export function syncTranscript(chatId: string, messages: ChatMessage[]) {
  * don't have to know that the store must hold the message before the
  * instance can submit it.
  */
-export function startConversation(text: string, modelId: string): string {
-  const chatId = useChatStore.getState().createChat(text, modelId);
+export function startConversation(
+  text: string,
+  modelId: string,
+  file?: MessageFile
+): string {
+  const chatId = useChatStore.getState().createChat(text, modelId, file);
   // The instance seeds from the store, which now holds the user message; a
-  // no-arg send submits exactly that.
+  // no-arg send submits exactly that — composed with the file by toUIMessages.
   void conversationOf(chatId).sendMessage();
   return chatId;
 }
 
 /** Sends a message in an existing conversation. */
-export function sendToConversation(chatId: string, text: string) {
+export function sendToConversation(
+  chatId: string,
+  text: string,
+  file?: MessageFile
+) {
   // Recorded in the store for recency and search; the instance owns the stream.
-  useChatStore.getState().sendMessage(chatId, text);
-  void conversationOf(chatId).sendMessage({ text });
+  useChatStore.getState().sendMessage(chatId, text, file);
+  // The store keeps what was typed; the model gets the file inlined ahead of it.
+  void conversationOf(chatId).sendMessage({
+    text: file ? composeWithFile(text.trim(), file) : text,
+  });
 }
 
 /**

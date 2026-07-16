@@ -60,23 +60,15 @@ interface ChatStore {
   setHasHydrated: () => void;
   /**
    * Creates a chat from the first user message, pinned to a model; returns its
-   * id. `file` marks a submitted clip or image (the message carries its name and
-   * — in memory only — its bytes; see MessageFile). `prompt` is what was ASKED of
-   * that file: nothing for a transcription, a task token for an image. `content`
-   * always titles the chat, so a file turn passes its filename.
+   * id. `content` is always what the user typed — an attached `file` rides
+   * alongside it rather than replacing it, so the title reads the same either way.
    */
-  createChat: (
-    content: string,
-    modelId: string,
-    file?: MessageFile,
-    prompt?: string
-  ) => string;
+  createChat: (content: string, modelId: string, file?: MessageFile) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
   sendMessage: (
     chatId: string,
     content: string,
-    file?: MessageFile,
-    prompt?: string
+    file?: MessageFile
   ) => boolean;
   /** Replaces a chat's transcript (synced from the AI SDK as tokens arrive). */
   syncMessages: (chatId: string, messages: ChatMessage[]) => boolean;
@@ -93,12 +85,10 @@ export const useChatStore = create<ChatStore>()(
       hasHydrated: false,
       setHasHydrated: () => set({ hasHydrated: true }),
 
-      createChat: (content, modelId, file, prompt) => {
+      createChat: (content, modelId, file) => {
         const id = crypto.randomUUID();
         const chat: Chat = {
           id,
-          // A submitted file titles the chat with its filename, so recents and
-          // search read the same either way.
           title: titleFrom(content),
           updatedAt: today(),
           modelId,
@@ -106,9 +96,7 @@ export const useChatStore = create<ChatStore>()(
             {
               id: crypto.randomUUID(),
               role: "user",
-              // For a file turn the text is what was ASKED of it (a vision task
-              // token), not its name — the view already renders the file itself.
-              content: file ? (prompt ?? "") : content.trim(),
+              content: content.trim(),
               ...(file ? { file } : {}),
             },
           ],
@@ -117,13 +105,13 @@ export const useChatStore = create<ChatStore>()(
         return id;
       },
 
-      sendMessage: (chatId, content, file, prompt) => {
+      sendMessage: (chatId, content, file) => {
         const chat = get().chats.find((c) => c.id === chatId);
         if (!chat) return false;
         const message: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
-          content: file ? (prompt ?? "") : content.trim(),
+          content: content.trim(),
           ...(file ? { file } : {}),
         };
         set((state) => {
@@ -183,21 +171,12 @@ export const useChatStore = create<ChatStore>()(
       // Hydration is triggered explicitly on mount so the server's empty render
       // and the client's stored chats can't disagree.
       skipHydration: true,
-      // Persist everything EXCEPT the audio bytes. A clip rides on the message
-      // as a data URL so the player and a retry can reach it, but writing it
-      // here would put megabytes of base64 into a ~5MB quota and silently drop
-      // the write for every chat. Stripped at the boundary, so the in-memory
-      // store stays whole and only the stored copy forgets the audio.
-      partialize: (state) => ({
-        chats: state.chats.map((chat) => ({
-          ...chat,
-          messages: chat.messages.map(({ file, ...message }) =>
-            file
-              ? { ...message, file: { name: file.name, mediaType: file.mediaType } }
-              : message
-          ),
-        })),
-      }),
+      // Chats persist whole, attachments included: an attachment is only ever the
+      // text we extracted, and extraction is capped (MAX_ATTACHMENT_CHARS) well
+      // under what would threaten the ~5MB quota. Keeping it is what makes a
+      // reloaded chat coherent — the file's text IS the question the assistant
+      // answered.
+      partialize: (state) => ({ chats: state.chats }),
       onRehydrateStorage: () => (state) => state?.setHasHydrated(),
     }
   )
