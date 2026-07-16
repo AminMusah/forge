@@ -49,7 +49,7 @@ export function buildCodegenPrompt(
   const system = `${RULES}
 
 THIS MODEL (task: ${task}):
-- INPUT: ${INPUT_GUIDE[descriptor.input]}
+- INPUT: ${descriptor.inputHint ?? INPUT_GUIDE[descriptor.input]}
 - OUTPUT (what forge.run resolves to): ${descriptor.output}
 - WHAT TO BUILD: ${descriptor.hint}
 - Always provide the input control (a drop zone AND a file picker for file inputs), a running/loading state driven by onProgress, and a visible error state.`;

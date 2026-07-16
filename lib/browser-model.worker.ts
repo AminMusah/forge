@@ -61,14 +61,24 @@ export type WorkerRequest =
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
   | { type: "interrupt" };
 
-/** What a generic run feeds the model. Decoded per `input` presence. */
+/** What a generic run feeds the model. run() arranges positional args from which
+ *  of these are present — covering single-input, zero-shot (+labels) and QA
+ *  (+context) without per-task-NAME code. */
 export interface RunInput {
   /** A data URL — the worker decodes it to a RawImage. */
   image?: string;
-  /** A data URL — the BRIDGE decodes it to 16kHz samples (needs AudioContext,
-   *  which the worker lacks) and routes to the tuned transcribe path. */
+  /** A data URL the iframe passes. The BRIDGE decodes it (AudioContext isn't in
+   *  the worker): to the tuned transcribe path for ASR, or to `audioSamples` for
+   *  any other audio pipeline task. */
   audio?: string;
+  /** 16kHz mono samples the bridge decoded from `audio` — the worker's primary
+   *  input for non-ASR audio tasks (audio-classification, …). */
+  audioSamples?: Float32Array;
   text?: string;
+  /** Candidate labels for zero-shot tasks — the pipeline's 2nd positional arg. */
+  labels?: string[];
+  /** Context passage for question-answering — the pipeline's 2nd positional arg. */
+  context?: string;
   /** Passed straight through to the pipeline (e.g. object-detection `threshold`). */
   options?: Record<string, unknown>;
 }
@@ -94,7 +104,9 @@ export interface ChatTurn {
  * stay honest.
  */
 type GenericPipe = {
-  (input: unknown, options?: Record<string, unknown>): Promise<unknown>;
+  // Variadic: single-input tasks call (input, options); multi-input ones call
+  // (primary, secondary, options) — run() arranges the args.
+  (...args: unknown[]): Promise<unknown>;
   dispose(): Promise<void>;
 };
 
@@ -286,13 +298,30 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
 
   post({ type: "progress", id, text: "Running…" });
 
-  // Decode to what the pipeline expects. RawImage handles a data URL in-worker
-  // (no main-thread decode, unlike audio). Text passes straight through.
-  const modelInput: unknown = input.image
-    ? await RawImage.fromURL(input.image)
-    : (input.text ?? "");
+  // RawImage handles a data URL in-worker (no main-thread decode). Audio was
+  // decoded to samples by the bridge. Text passes straight through.
+  const image = input.image ? await RawImage.fromURL(input.image) : undefined;
+  const primary = input.audioSamples ?? image ?? input.text;
+  const text = input.text;
 
-  const data = await loaded.pipe(modelInput, input.options ?? {});
+  // Arrange the pipeline's positional args from which inputs are present — the
+  // one place multi-input lives, and it keys off input SHAPE, not task name.
+  let args: unknown[];
+  if (input.labels?.length) {
+    // zero-shot-*: (image|audio|text, candidate_labels)
+    args = [primary ?? "", input.labels];
+  } else if (input.context !== undefined) {
+    // question-answering: (question, context)
+    args = [text ?? "", input.context];
+  } else if (image !== undefined && text !== undefined) {
+    // document-question-answering: (image, question)
+    args = [image, text];
+  } else {
+    // single input
+    args = [primary ?? ""];
+  }
+
+  const data = await loaded.pipe(...args, input.options ?? {});
   post({ type: "result", id, data });
 }
 
@@ -373,8 +402,39 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       post({
         type: "error",
         id: request.id,
-        message: error instanceof Error ? error.message : String(error),
+        message: friendlyError(error),
       });
     }
   });
 });
+
+/**
+ * Turns ONNX Runtime / WebGPU backend failures into a plain next step. These
+ * aren't Forge bugs — they're facts about a given model on a given GPU — but the
+ * raw C++ traces are unreadable. Known cases become "try a different model";
+ * anything unrecognised passes through so we never mask a genuinely new failure.
+ */
+function friendlyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  // A valid model whose shader exceeds this GPU's per-stage storage-buffer cap.
+  if (/storage\s*buffers|maxStorageBuffersPerShaderStage/i.test(message)) {
+    return "This model is too complex for your GPU's WebGPU limits. Try a smaller model for this task.";
+  }
+
+  // A malformed ONNX export the runtime refuses to load — fails for any device.
+  if (
+    /can't create a session|invalid model|InitializeStateFromModelFileGraphProto|Subgraph output/i.test(
+      message
+    )
+  ) {
+    return "This model couldn't be loaded — its ONNX file looks broken (a bad export). Try a different model for this task.";
+  }
+
+  // Out of GPU memory during load/compile.
+  if (/out of memory|OOM|failed to allocate/i.test(message)) {
+    return "Ran out of GPU memory for this model. Try a smaller model, or free up memory and reload.";
+  }
+
+  return message;
+}

@@ -46,11 +46,19 @@ export function runModel(
   return runViaWorker(model, input, onProgress);
 }
 
-function runViaWorker(
+async function runViaWorker(
   model: PlaygroundModel,
   input: RunInput,
   onProgress?: (text: string) => void
 ): Promise<unknown> {
+  // Audio can't be decoded in the worker (no AudioContext), so do it here and
+  // pass samples — for any audio pipeline task that isn't ASR (which took the
+  // transcribe branch above).
+  if (input.audio) {
+    onProgress?.("Reading audio…");
+    input = { ...input, audioSamples: await decodeToMono16k(input.audio), audio: undefined };
+  }
+
   const worker = getWorker();
   const id = crypto.randomUUID();
 

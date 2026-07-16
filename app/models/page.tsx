@@ -250,11 +250,17 @@ export default function ModelsPage() {
                 <span className="hidden shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground sm:inline">
                   {taskLabel(model.task)}
                 </span>
+                {/* Say WHY it's disabled, visibly — a `disabled` button swallows
+                    its own title tooltip, so the reason has to live in the row. */}
+                {unrunnableReason(model) && (
+                  <span className="hidden max-w-40 shrink-0 text-right text-xs text-muted-foreground md:inline">
+                    {unrunnableReason(model)}
+                  </span>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={!isRunnable(model)}
-                  title={unrunnableReason(model)}
                   onClick={() => useInChat(model)}
                 >
                   {model.task === "automatic-speech-recognition"

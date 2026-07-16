@@ -38,6 +38,13 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   const [status, setStatus] = React.useState<string | null>(null);
   const webgpu = React.useMemo(hasWebGPU, []);
   const runnable = isRunnable(model);
+  // Why the row's action is unavailable — Forge can't run this task/model, or
+  // this browser lacks WebGPU. Shown in the row and used to gate the button.
+  const disabledReason = !runnable
+    ? unrunnableReason(model)
+    : webgpu
+      ? undefined
+      : "Requires WebGPU — try Chrome or Edge";
 
   // Cache Storage is the source of truth — no bookkeeping of ours to drift. The
   // task decides which files to look for: Whisper ships two graphs, not one.
@@ -97,6 +104,14 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
         {status ?? (size > 0 ? `${dtype} · ${formatBytes(size)}` : dtype)}
       </span>
 
+      {/* Visible reason when a button is disabled — a `disabled` button hides its
+          own title tooltip, so the reason has to be in the row. */}
+      {!status && disabledReason && (
+        <span className="hidden max-w-40 shrink-0 text-right text-xs text-muted-foreground md:inline">
+          {disabledReason}
+        </span>
+      )}
+
       {status ? (
         <Button size="sm" variant="outline" disabled className="gap-1.5">
           <Spinner className="size-3.5" />
@@ -116,7 +131,6 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
             size="sm"
             variant="outline"
             disabled={!runnable}
-            title={unrunnableReason(model)}
             onClick={() => onUse(model)}
           >
             <Check className="size-3.5" />
@@ -131,10 +145,6 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
           // Don't let someone spend a multi-hundred-MB download on a model we
           // then refuse to run.
           disabled={!webgpu || downloaded === null || !runnable}
-          title={
-            unrunnableReason(model) ??
-            (webgpu ? undefined : "Requires WebGPU — try Chrome or Edge")
-          }
           onClick={() => void download()}
         >
           <DesktopDownload className="size-3.5" />
