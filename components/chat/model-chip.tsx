@@ -13,8 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useChatStore } from "@/hooks/use-chat-store";
 import { useChatModels, useModelStore } from "@/hooks/use-model-store";
+import { rebindConversation } from "@/lib/conversation";
 import type { HfTask } from "@/lib/hf-tasks";
 import type { Model } from "@/lib/types";
 
@@ -34,7 +34,6 @@ export function ModelChip({ task }: ModelChipProps) {
   const pathname = usePathname();
   const selectedModel = useModelStore((state) => state.selectedModel);
   const setModel = useModelStore((state) => state.setModel);
-  const rebindModel = useChatStore((state) => state.rebindModel);
 
   // Includes the BYO-chat model (when a chat connection is set) alongside the
   // catalog, filtered to the open chat's task.
@@ -43,7 +42,7 @@ export function ModelChip({ task }: ModelChipProps) {
   const handleSelect = (model: Model) => {
     setModel(model);
     const activeChatId = pathname.match(/^\/c\/([^/]+)$/)?.[1];
-    if (activeChatId) rebindModel(activeChatId, model.id);
+    if (activeChatId) rebindConversation(activeChatId, model.id);
   };
 
   return (

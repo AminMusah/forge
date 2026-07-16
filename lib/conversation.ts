@@ -10,8 +10,8 @@ import { useTokenStore } from "@/hooks/use-token-store";
 import { composeWithFile } from "@/lib/attachments";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { LocalChatTransport } from "@/lib/local-chat-transport";
-import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
 import { splitLeakedReasoning } from "@/lib/reasoning";
+import { selectTransport } from "@/lib/transport-kind";
 import type { ChatMessage, MessageFile } from "@/lib/types";
 
 /**
@@ -22,7 +22,9 @@ import type { ChatMessage, MessageFile } from "@/lib/types";
  *
  * Callers never see UIMessage, the Chat instance, or the message conversion.
  * The chat store keeps what a turn doesn't cause: titles, recency, rename,
- * delete, model rebinding.
+ * delete. Model rebinding is NOT in that list, though it looks like it should
+ * be: an instance picks its transport once, so re-pinning a chat to a model on
+ * another backend has to rebuild the conversation — see rebindConversation.
  */
 const conversations = new Map<string, Chat<UIMessage>>();
 
@@ -117,50 +119,59 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
 
   // conversationOf serves CHAT (text-generation) — every other task runs in a
   // generated PlaygroundView, which reaches the model through the forge bridge,
-  // not here. So the transport is one of three peers: a browser model runs on
-  // the user's GPU; a BYO-chat model goes to /api/chat-byo (their own
-  // OpenAI-compatible provider); everything else goes to /api/chat (the HF
-  // router). Downstream is identical.
+  // not here. So the transport is one of four peers: a browser model runs on the
+  // user's GPU; a localhost provider is called straight from the browser; a BYO
+  // model goes to /api/chat-byo (their own OpenAI-compatible provider);
+  // everything else goes to /api/chat (the HF router). Downstream is identical.
   const model = modelOf();
   const task = model?.task ?? "text-generation";
-  // A localhost chat provider must run client-side — a hosted server can't reach
-  // the user's machine — so it gets its own transport, like a browser model.
-  const chatIsLocal =
-    model?.chatConnection &&
-    isLocalBaseURL(useChatProviderStore.getState().baseURL ?? "");
-  const transport = model?.runtime === "browser"
-    ? new BrowserTransport(model.id, model.dtype, task)
-    : chatIsLocal
-    ? new LocalChatTransport(model?.reasoning === true)
-    : model?.chatConnection
-      ? new DefaultChatTransport<UIMessage>({
-          api: "/api/chat-byo",
-          prepareSendMessagesRequest: ({ messages, body }) => ({
-            body: { ...body, messages, reasoning: modelOf()?.reasoning },
-          }),
-        })
-      : new DefaultChatTransport<UIMessage>({
-          api: "/api/chat",
-          // Resolve the model at request time so mid-chat rebinds take effect.
-          prepareSendMessagesRequest: ({ messages, body }) => {
-            const current = modelOf();
-            return {
-              body: {
-                ...body,
-                messages,
-                modelId: modelIdOf(),
-                provider: current?.provider,
-                reasoning: current?.reasoning,
+  // Chosen once, for the life of this instance — which is why a rebind that
+  // crosses kinds has to evict rather than just write the store. onFinish and
+  // onError close over this instead of re-deriving it from the model flags.
+  const kind = selectTransport(model, useChatProviderStore.getState().baseURL);
+  const transport =
+    // `model &&` narrows for the compiler; selectTransport only answers
+    // "browser" for a model it was given.
+    model && kind === "browser"
+      ? new BrowserTransport(model.id, model.dtype, task)
+      : kind === "local"
+        ? new LocalChatTransport(model?.reasoning === true)
+        : kind === "byo"
+          ? new DefaultChatTransport<UIMessage>({
+              api: "/api/chat-byo",
+              prepareSendMessagesRequest: ({ messages, body }) => ({
+                body: { ...body, messages, reasoning: modelOf()?.reasoning },
+              }),
+            })
+          : new DefaultChatTransport<UIMessage>({
+              api: "/api/chat",
+              // Resolve the model at request time so a rebind WITHIN the router
+              // — to another HF model — lands without rebuilding the instance.
+              prepareSendMessagesRequest: ({ messages, body }) => {
+                const current = modelOf();
+                return {
+                  body: {
+                    ...body,
+                    messages,
+                    modelId: modelIdOf(),
+                    provider: current?.provider,
+                    reasoning: current?.reasoning,
+                  },
+                };
               },
-            };
-          },
-        });
+            });
 
   const instance = new Chat<UIMessage>({
     id: chatId,
     messages: toUIMessages(stored?.messages ?? []),
     transport,
     onFinish: () => {
+      // An instance evicted mid-stream (a rebind) still finishes its aborted
+      // stream. Its transcript is stale the moment it was replaced, and its
+      // empty tail is the abort rather than a router failure — so it must
+      // neither write nor toast.
+      if (conversations.get(chatId) !== instance) return;
+
       const messages = transcriptOf(chatId, instance.messages);
       const last = messages.at(-1);
 
@@ -175,9 +186,10 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
       // assistant text behind — an empty reply is the only symptom, and only the
       // HF router does this. Browser and BYO transports surface real errors via
       // onError, so gating here avoids a confusing second toast on those paths.
-      const m = modelOf();
-      const hfServer = m?.runtime !== "browser" && !m?.chatConnection;
-      if (hfServer && (last?.role !== "assistant" || !last.content)) {
+      if (
+        kind === "hf-router" &&
+        (last?.role !== "assistant" || !last.content)
+      ) {
         toast.error("The model returned no response", {
           description: "Try sending again, or pick a different model.",
         });
@@ -186,11 +198,11 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
       syncTranscript(chatId, messages);
     },
     onError: (error) => {
-      // Browser models need no token, and a BYO-chat model uses the user's own
-      // provider — neither failure is a missing HF token, so don't prompt for
-      // one; just surface what went wrong.
-      const failed = modelOf();
-      if (failed?.runtime === "browser" || failed?.chatConnection) {
+      // Only the HF router needs a token. A browser model runs on the GPU, and
+      // a local or BYO model uses the user's own provider — none of their
+      // failures is a missing token, so don't prompt for one; just surface what
+      // went wrong.
+      if (kind !== "hf-router") {
         toast.error("Reply failed", { description: error.message });
         return;
       }
@@ -280,6 +292,35 @@ export function sendToConversation(
 }
 
 /**
+ * Drops a reply that was still streaming when its conversation was replaced.
+ * The transcript syncs every token, so an aborted stream leaves a half-written
+ * assistant turn behind — one that answers a question the user has just re-aimed
+ * at a different model, with nothing to mark it as cut off.
+ */
+function dropPartialReply(chatId: string) {
+  const messages =
+    useChatStore.getState().chats.find((c) => c.id === chatId)?.messages ?? [];
+  if (messages.at(-1)?.role !== "assistant") return;
+  syncTranscript(chatId, messages.slice(0, -1));
+}
+
+/**
+ * Re-pins a chat to another model and rebuilds its conversation — one verb, so
+ * callers don't have to know that an instance picks its transport once and keeps
+ * it. Without the rebuild a rebind across backends keeps talking to the old one:
+ * the router transport would post the new model's id to /api/chat, and a
+ * BrowserTransport would go on running the model id it froze at construction.
+ */
+export function rebindConversation(chatId: string, modelId: string) {
+  const status = conversations.get(chatId)?.status;
+  const streaming = status === "streaming" || status === "submitted";
+  if (!useChatStore.getState().rebindModel(chatId, modelId)) return;
+  // Evicting stops the stream; useConversation rebuilds on the kind change.
+  evictConversation(chatId);
+  if (streaming) dropPartialReply(chatId);
+}
+
+/**
  * Re-sends every turn that failed because no token was set. The user message
  * is still on the instance, so a no-arg send resubmits it.
  */
@@ -290,7 +331,11 @@ export function retryPendingConversations() {
   awaitingToken.clear();
 }
 
-/** Stops any in-flight stream and forgets the conversation (chat deleted). */
+/**
+ * Stops any in-flight stream and forgets the conversation — because the chat was
+ * deleted, or because it must be rebuilt on another transport. The next
+ * conversationOf reseeds from the store, so the transcript survives either way.
+ */
 export function evictConversation(chatId: string) {
   const instance = conversations.get(chatId);
   if (!instance) return;

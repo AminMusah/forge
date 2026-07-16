@@ -3,13 +3,43 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 
+import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
+import { useChatStore } from "@/hooks/use-chat-store";
+import { useChatModels } from "@/hooks/use-model-store";
 import {
   conversationOf,
   sendToConversation,
   syncTranscript,
   transcriptOf,
 } from "@/lib/conversation";
+import { selectTransport, type TransportKind } from "@/lib/transport-kind";
 import type { ChatMessage, MessageFile } from "@/lib/types";
+
+/**
+ * Everything a conversation's transport is built from, as one primitive — so it
+ * can key the instance memo. Both halves are load-bearing, and neither implies
+ * the other:
+ *
+ * - the KIND changes with no rebind when a provider is edited from a cloud URL
+ *   to a localhost one (byo → local);
+ * - the MODEL changes with no kind change when re-pinning one browser model to
+ *   another, and BrowserTransport freezes its model id at construction.
+ *
+ * Reads the catalog through useChatModels so the synthetic BYO model resolves
+ * like any other.
+ */
+function useTransportIdentity(chatId: string): string {
+  const modelId = useChatStore((state) =>
+    state.chats.find((c) => c.id === chatId)?.modelId
+  );
+  const models = useChatModels();
+  const baseURL = useChatProviderStore((state) => state.baseURL);
+  const kind: TransportKind = selectTransport(
+    models.find((m) => m.id === modelId),
+    baseURL
+  );
+  return `${kind}:${modelId ?? ""}`;
+}
 
 interface UseConversation {
   /** The transcript, including a placeholder row while awaiting first tokens. */
@@ -28,7 +58,12 @@ interface UseConversation {
  * four verbs.
  */
 export function useConversation(chatId: string): UseConversation {
-  const instance = useMemo(() => conversationOf(chatId), [chatId]);
+  // An instance picks its transport once and keeps it, so when the transport's
+  // inputs change, rebindConversation evicts and this is what re-subscribes to
+  // the replacement. Without it useChat stays bound to the evicted instance
+  // while sends stream into a new one, and the transcript appears to freeze.
+  const transport = useTransportIdentity(chatId);
+  const instance = useMemo(() => conversationOf(chatId), [chatId, transport]);
   const {
     messages: uiMessages,
     status,

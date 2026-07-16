@@ -62,11 +62,17 @@ function MessageActions({
   onRegenerate?: () => void;
 }) {
   const [copied, setCopied] = React.useState(false);
+  const resetTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  React.useEffect(() => () => clearTimeout(resetTimer.current), []);
 
   const copy = async () => {
     await navigator.clipboard.writeText(content);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Restart the window on every copy: a timer left over from the previous one
+    // would clear the checkmark early and deny a copy that did happen.
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), 2000);
   };
 
   // Only hidden where hover exists — on touch there is no hover, so the
