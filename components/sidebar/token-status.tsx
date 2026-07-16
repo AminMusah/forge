@@ -7,6 +7,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useTokenStore } from "@/hooks/use-token-store";
@@ -15,7 +16,8 @@ import { cn } from "@/lib/utils";
 export function TokenStatus() {
   const { onOpen } = useModal();
   const hasToken = useTokenStore((state) => state.hasToken);
-  const hasProvider = useCodegenProviderStore((state) => state.hasProvider);
+  const hasChat = useChatProviderStore((state) => state.hasProvider);
+  const hasCodegen = useCodegenProviderStore((state) => state.hasProvider);
 
   return (
     <SidebarMenu>
@@ -25,7 +27,8 @@ export function TokenStatus() {
           <span className="flex-1 truncate">Providers</span>
           <span className="flex items-center gap-1">
             <StatusDot on={hasToken} label="Hugging Face token" />
-            <StatusDot on={hasProvider} label="Codegen provider" />
+            <StatusDot on={hasChat} label="Chat provider" />
+            <StatusDot on={hasCodegen} label="Codegen provider" />
           </span>
         </SidebarMenuButton>
       </SidebarMenuItem>

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import type { HfTask } from "@/lib/hf-tasks";
 import { defaultChatModel, defaultModels } from "@/lib/models";
 import type { Model } from "@/lib/types";
@@ -76,8 +77,55 @@ export const useModelStore = create<ModelStore>()(
   )
 );
 
+/** The synthetic model backed by a BYO chat connection, keyed by its modelId. */
+function buildChatConnectionModel(modelId: string, baseURL: string | null): Model {
+  let host = "your provider";
+  try {
+    if (baseURL) host = new URL(baseURL).host;
+  } catch {
+    // Keep the fallback label.
+  }
+  return {
+    id: `byo-chat:${modelId}`,
+    name: modelId,
+    description: `Your provider · ${host}`,
+    task: "text-generation",
+    runtime: "server",
+    chatConnection: true,
+  };
+}
+
+/**
+ * The BYO-chat model derived from the chat-provider store, or null. Non-React
+ * accessor for conversation.ts, which must resolve a chat's pinned model outside
+ * a component. The model is derived, not stored, so it can't go stale.
+ */
+export function chatConnectionModel(): Model | null {
+  const { hasProvider, modelId, baseURL } = useChatProviderStore.getState();
+  if (!hasProvider || !modelId) return null;
+  return buildChatConnectionModel(modelId, baseURL);
+}
+
+/**
+ * Catalog models plus the BYO-chat model (when a chat connection is set),
+ * optionally filtered to a task. The picker reads this so the connection shows
+ * up as a selectable model without being persisted into the store.
+ */
+export function useChatModels(task?: HfTask): Model[] {
+  const models = useModelStore((s) => s.models);
+  const hasProvider = useChatProviderStore((s) => s.hasProvider);
+  const modelId = useChatProviderStore((s) => s.modelId);
+  const baseURL = useChatProviderStore((s) => s.baseURL);
+
+  const synthetic =
+    hasProvider && modelId ? [buildChatConnectionModel(modelId, baseURL)] : [];
+  const all = [...models, ...synthetic];
+  return task ? all.filter((m) => m.task === task) : all;
+}
+
 /** Task classification of a chat's pinned model. */
 export function taskForModel(modelId: string): HfTask {
+  if (modelId.startsWith("byo-chat:")) return "text-generation";
   return (
     useModelStore.getState().models.find((m) => m.id === modelId)?.task ??
     "text-generation"

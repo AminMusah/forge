@@ -24,6 +24,12 @@ export interface Model {
    */
   runtime?: "server" | "browser";
   /**
+   * Synthetic model backed by the user's BYO chat connection (an
+   * OpenAI-compatible endpoint). Routes to /api/chat-byo instead of the HF
+   * router. Derived from the chat-provider store, never persisted.
+   */
+  chatConnection?: boolean;
+  /**
    * Quantization for a browser model. Defaults to q4: q4f16 is smaller but its
    * fp16 accumulation degrades the KV cache on some GPUs, and the model
    * degenerates into loops regardless of sampling.

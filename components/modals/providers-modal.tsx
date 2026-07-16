@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useTokenStore } from "@/hooks/use-token-store";
@@ -21,14 +22,18 @@ import { CODEGEN_PRESETS } from "@/lib/playground/codegen-connection";
 import { cn } from "@/lib/utils";
 
 /**
- * One place for every cloud credential. Two sections of the SAME shape — a
- * Hugging Face token for chat, and an OpenAI-compatible connection for codegen —
- * so the user never has to wonder why one is "a token" and the other "a URL".
- * They differ only in policy: chat is strict-BYO; codegen has a shared default.
+ * One place for every cloud credential. A Hugging Face token for HF-routed chat,
+ * and two OpenAI-compatible connections of the same shape — one for chatting
+ * against your own provider, one for the codegen that writes playgrounds — so
+ * the user never wonders why one is "a token" and another "a URL". They differ
+ * only in policy: HF chat is strict-BYO; the two connections are optional.
  */
 export function ProvidersModal() {
   const { type, isOpen, onClose } = useModal();
   const open = isOpen && type === "providers";
+
+  const chat = useChatProviderStore();
+  const codegen = useCodegenProviderStore();
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
@@ -36,20 +41,40 @@ export function ProvidersModal() {
         <DialogHeader>
           <DialogTitle>Providers</DialogTitle>
           <DialogDescription>
-            Bring your own keys. Both are stored in secure cookies and never
+            Bring your own keys. Each is stored in a secure cookie and never
             exposed to the browser.
           </DialogDescription>
         </DialogHeader>
 
         <HfTokenSection onClose={onClose} />
         <Separator />
-        <CodegenProviderSection />
+        <ConnectionSection
+          title="Chat provider"
+          purpose="for chat · optional"
+          blurb="Chat against your own OpenAI-compatible model — a local Ollama, or a proprietary model as a baseline. Or just pick a Hugging Face model above."
+          hasProvider={chat.hasProvider}
+          storedBaseURL={chat.baseURL}
+          storedModelId={chat.modelId}
+          onSave={chat.save}
+          onClear={chat.clear}
+        />
+        <Separator />
+        <ConnectionSection
+          title="Codegen provider"
+          purpose="for playgrounds · optional"
+          blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Leave blank to use the shared default."
+          hasProvider={codegen.hasProvider}
+          storedBaseURL={codegen.baseURL}
+          storedModelId={codegen.modelId}
+          onSave={codegen.save}
+          onClear={codegen.clear}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-/** Chat — strict BYO: without a token, cloud chat 401s. */
+/** Chat via the HF router — strict BYO: without a token, cloud chat 401s. */
 function HfTokenSection({ onClose }: { onClose: () => void }) {
   const hasToken = useTokenStore((s) => s.hasToken);
   const save = useTokenStore((s) => s.save);
@@ -87,7 +112,8 @@ function HfTokenSection({ onClose }: { onClose: () => void }) {
         <span className="ml-auto text-xs text-muted-foreground">for chat</span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Cloud chat is billed to your account. Local models need no token.
+        Cloud chat via the HF router, billed to your account. Local models need
+        no token.
       </p>
 
       <form
@@ -129,20 +155,38 @@ function HfTokenSection({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Codegen — OpenAI-compatible; has a shared default, so this is optional. */
-function CodegenProviderSection() {
-  const hasProvider = useCodegenProviderStore((s) => s.hasProvider);
-  const storedBaseURL = useCodegenProviderStore((s) => s.baseURL);
-  const storedModelId = useCodegenProviderStore((s) => s.modelId);
-  const save = useCodegenProviderStore((s) => s.save);
-  const clear = useCodegenProviderStore((s) => s.clear);
+interface ConnectionSectionProps {
+  title: string;
+  purpose: string;
+  blurb: string;
+  hasProvider: boolean | null;
+  storedBaseURL: string | null;
+  storedModelId: string | null;
+  onSave: (conn: {
+    baseURL: string;
+    apiKey: string;
+    modelId: string;
+  }) => Promise<void>;
+  onClear: () => Promise<void>;
+}
 
-  // Prefill from what's stored, else the first (Groq) preset.
+/** An OpenAI-compatible connection — the shared shape for chat and codegen. */
+function ConnectionSection({
+  title,
+  purpose,
+  blurb,
+  hasProvider,
+  storedBaseURL,
+  storedModelId,
+  onSave,
+  onClear,
+}: ConnectionSectionProps) {
   const [baseURL, setBaseURL] = React.useState("");
   const [modelId, setModelId] = React.useState("");
   const [apiKey, setApiKey] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
+  // Prefill from what's stored, else the first (Groq) preset.
   React.useEffect(() => {
     const preset = CODEGEN_PRESETS[0];
     setBaseURL(storedBaseURL ?? preset.baseURL);
@@ -162,9 +206,13 @@ function CodegenProviderSection() {
     if (!baseURL.trim() || !apiKey.trim() || !modelId.trim()) return;
     setSaving(true);
     try {
-      await save({ baseURL: baseURL.trim(), apiKey: apiKey.trim(), modelId: modelId.trim() });
+      await onSave({
+        baseURL: baseURL.trim(),
+        apiKey: apiKey.trim(),
+        modelId: modelId.trim(),
+      });
       setApiKey("");
-      toast.success("Codegen provider saved");
+      toast.success(`${title} saved`);
     } catch (error) {
       toast.error("Connection rejected", {
         description: error instanceof Error ? error.message : undefined,
@@ -177,16 +225,11 @@ function CodegenProviderSection() {
   return (
     <section>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium">Codegen provider</h3>
+        <h3 className="text-sm font-medium">{title}</h3>
         <StatusDot on={hasProvider} />
-        <span className="ml-auto text-xs text-muted-foreground">
-          for playgrounds · optional
-        </span>
+        <span className="ml-auto text-xs text-muted-foreground">{purpose}</span>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        The AI that writes playground UIs. Any OpenAI-compatible endpoint. Leave
-        blank to use the shared default.
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{blurb}</p>
 
       <form
         className="mt-2 space-y-2"
@@ -233,7 +276,7 @@ function CodegenProviderSection() {
             autoComplete="off"
           />
           {hasProvider && (
-            <Button type="button" variant="outline" onClick={() => void clear()}>
+            <Button type="button" variant="outline" onClick={() => void onClear()}>
               Remove
             </Button>
           )}

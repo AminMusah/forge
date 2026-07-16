@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
-import { useModelStore } from "@/hooks/use-model-store";
+import { chatConnectionModel, useModelStore } from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { splitLeakedReasoning } from "@/lib/reasoning";
@@ -108,18 +108,33 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   const modelIdOf = () =>
     useChatStore.getState().chats.find((c) => c.id === chatId)?.modelId;
 
-  const modelOf = () =>
-    useModelStore.getState().models.find((m) => m.id === modelIdOf());
+  // A BYO-chat model is synthetic (derived from the chat connection), so it
+  // won't be in the persisted store — resolve it separately.
+  const modelOf = () => {
+    const id = modelIdOf();
+    const stored = useModelStore.getState().models.find((m) => m.id === id);
+    if (stored) return stored;
+    const byo = chatConnectionModel();
+    return byo?.id === id ? byo : undefined;
+  };
 
   // conversationOf serves CHAT (text-generation) — every other task runs in a
   // generated PlaygroundView, which reaches the model through the forge bridge,
-  // not here. So the transport is just: a browser model runs on the user's GPU,
-  // a server model goes to /api/chat. Everything downstream is identical.
+  // not here. So the transport is one of three peers: a browser model runs on
+  // the user's GPU; a BYO-chat model goes to /api/chat-byo (their own
+  // OpenAI-compatible provider); everything else goes to /api/chat (the HF
+  // router). Downstream is identical.
   const model = modelOf();
   const task = model?.task ?? "text-generation";
-  const transport =
-    model?.runtime === "browser"
-      ? new BrowserTransport(model.id, model.dtype, task)
+  const transport = model?.runtime === "browser"
+    ? new BrowserTransport(model.id, model.dtype, task)
+    : model?.chatConnection
+      ? new DefaultChatTransport<UIMessage>({
+          api: "/api/chat-byo",
+          prepareSendMessagesRequest: ({ messages, body }) => ({
+            body: { ...body, messages, reasoning: modelOf()?.reasoning },
+          }),
+        })
       : new DefaultChatTransport<UIMessage>({
           api: "/api/chat",
           // Resolve the model at request time so mid-chat rebinds take effect.
@@ -163,9 +178,11 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
       syncTranscript(chatId, messages);
     },
     onError: (error) => {
-      // Browser models need no token — a WebGPU failure must not be mistaken
-      // for a missing one.
-      if (modelOf()?.runtime === "browser") {
+      // Browser models need no token, and a BYO-chat model uses the user's own
+      // provider — neither failure is a missing HF token, so don't prompt for
+      // one; just surface what went wrong.
+      const failed = modelOf();
+      if (failed?.runtime === "browser" || failed?.chatConnection) {
         toast.error("Reply failed", { description: error.message });
         return;
       }

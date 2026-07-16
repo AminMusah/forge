@@ -11,14 +11,18 @@
  * where the httpOnly cookie is readable. The apiKey never leaves the server.
  */
 
-/** The httpOnly cookie holding the JSON-encoded connection (apiKey included). */
+/** The httpOnly cookies holding a JSON-encoded connection (apiKey included). */
 export const CODEGEN_COOKIE = "codegen_conn";
+export const CHAT_COOKIE = "chat_conn";
 
-export interface CodegenConnection {
+export interface Connection {
   baseURL: string;
   apiKey: string;
   modelId: string;
 }
+
+/** Back-compat alias — codegen was the first consumer of this shape. */
+export type CodegenConnection = Connection;
 
 /** A picker entry. Data only — adding a provider is never a code change. */
 export interface CodegenPreset {
@@ -85,12 +89,10 @@ export const CODEGEN_PRESETS: CodegenPreset[] = [
 ];
 
 /** Parse the raw cookie value into a connection, or null if absent/malformed. */
-export function parseCodegenConnection(
-  raw: string | undefined
-): CodegenConnection | null {
+export function parseConnection(raw: string | undefined): Connection | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Partial<CodegenConnection>;
+    const value = JSON.parse(raw) as Partial<Connection>;
     if (
       typeof value.baseURL === "string" &&
       typeof value.apiKey === "string" &&
@@ -103,6 +105,9 @@ export function parseCodegenConnection(
   }
   return null;
 }
+
+/** Back-compat alias for the first consumer (codegen). */
+export const parseCodegenConnection = parseConnection;
 
 /** True for a localhost base URL (reachable only from the browser). */
 export function isLocalBaseURL(baseURL: string): boolean {
