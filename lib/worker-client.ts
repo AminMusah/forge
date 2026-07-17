@@ -25,8 +25,9 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
 
 /**
  * A request minus its id — request() mints that, so no caller can post one that
- * collides. `interrupt` isn't one of these: it carries no id and answers
- * nothing, so it's fire-and-forget rather than a round trip.
+ * collides. `interrupt` isn't one of these: it answers nothing, so it's
+ * fire-and-forget rather than a round trip — but it carries the id of the
+ * request it cancels, since the worker is shared by every caller.
  */
 export type WorkerCall = DistributiveOmit<
   Exclude<WorkerRequest, { type: "interrupt" }>,
@@ -93,7 +94,7 @@ export function request(
     // An interrupted generation still ends in `done`, so aborting settles this
     // promise normally rather than rejecting.
     const onAbort = () => {
-      worker.postMessage({ type: "interrupt" } satisfies WorkerRequest);
+      worker.postMessage({ type: "interrupt", id } satisfies WorkerRequest);
     };
 
     const cleanup = () => {
@@ -104,5 +105,10 @@ export function request(
     worker.addEventListener("message", onMessage);
     abortSignal?.addEventListener("abort", onAbort);
     worker.postMessage({ ...message, id } as WorkerRequest);
+    // A signal can already be aborted by the time request() is called — the
+    // `abort` event fired before there was a listener, so nothing would ever
+    // interrupt this job. Post the request first so the worker knows the id,
+    // then cancel it.
+    if (abortSignal?.aborted) onAbort();
   });
 }

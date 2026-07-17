@@ -59,7 +59,10 @@ export type WorkerRequest =
     }
   // Download and compile ahead of time, so the first message streams at once.
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
-  | { type: "interrupt" };
+  // Names the request it cancels: the worker is shared by chat, dictation and
+  // every playground run, so an unaddressed interrupt would cancel whichever
+  // job happened to be running.
+  | { type: "interrupt"; id: string };
 
 /** What a generic run feeds the model. run() arranges positional args from which
  *  of these are present — covering single-input, zero-shot (+labels) and QA
@@ -117,7 +120,13 @@ type Loaded =
 
 let loaded: Loaded | null = null;
 let loadedKey: string | null = null;
-const stopper = new InterruptableStoppingCriteria();
+
+// Cancellation is per-request. The running generate job owns its own stopping
+// criteria; an interrupt that arrives while its job is still QUEUED lands here
+// instead, because the abort signal fires once and is never re-sent — resetting
+// a shared criteria on dequeue is what used to swallow it.
+let running: { id: string; stopper: InterruptableStoppingCriteria } | null = null;
+const interruptedIds = new Set<string>();
 
 const post = (message: WorkerResponse) => self.postMessage(message);
 
@@ -327,37 +336,54 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
 
 async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
   const { id, modelId, dtype, messages } = request;
-  const loaded = await load(modelId, dtype, "text-generation", id);
-  if (loaded.kind !== "text-generation") throw new Error("Wrong model loaded.");
-  const model = loaded.pipe;
 
-  stopper.reset();
+  // Interrupted before it ever dequeued. Still answer `done`: the client's
+  // promise settles on a terminal message, so skipping it would hang the caller.
+  if (interruptedIds.delete(id)) {
+    post({ type: "done", id });
+    return;
+  }
 
-  // The pipeline applies the tokenizer's own chat template to this.
-  const streamer = new TextStreamer(model.tokenizer, {
-    skip_prompt: true,
-    skip_special_tokens: true,
-    callback_function: (delta: string) => {
-      if (delta) post({ type: "token", id, delta });
-    },
-  });
+  // Registered before the await: loading a cold model takes tens of seconds, and
+  // an interrupt arriving in that window must still stop the generation that
+  // follows. A per-job criteria is never reset, so the flag survives the wait.
+  const stopper = new InterruptableStoppingCriteria();
+  running = { id, stopper };
 
-  // No system prompt: the server path doesn't add one either, and the
-  // tokenizer's own chat template already establishes the assistant role.
-  // Greedy decoding makes a small model loop, so sample — with a
-  // repetition penalty — using the settings Qwen itself recommends.
-  await model(messages, {
-    max_new_tokens: 512,
-    do_sample: true,
-    temperature: 0.7,
-    top_p: 0.8,
-    top_k: 20,
-    repetition_penalty: 1.1,
-    streamer,
-    stopping_criteria: stopper,
-  });
+  try {
+    const loaded = await load(modelId, dtype, "text-generation", id);
+    if (loaded.kind !== "text-generation") throw new Error("Wrong model loaded.");
+    const model = loaded.pipe;
 
-  post({ type: "done", id });
+    // The pipeline applies the tokenizer's own chat template to this.
+    const streamer = new TextStreamer(model.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (delta: string) => {
+        if (delta) post({ type: "token", id, delta });
+      },
+    });
+
+    // No system prompt: the server path doesn't add one either, and the
+    // tokenizer's own chat template already establishes the assistant role.
+    // Greedy decoding makes a small model loop, so sample — with a
+    // repetition penalty — using the settings Qwen itself recommends.
+    await model(messages, {
+      max_new_tokens: 512,
+      do_sample: true,
+      temperature: 0.7,
+      top_p: 0.8,
+      top_k: 20,
+      repetition_penalty: 1.1,
+      streamer,
+      stopping_criteria: stopper,
+    });
+
+    post({ type: "done", id });
+  } finally {
+    running = null;
+    interruptedIds.delete(id);
+  }
 }
 
 /**
@@ -377,7 +403,12 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   // Not queued: interrupting is what UNBLOCKS the running job, so it must not
   // wait behind it.
   if (request.type === "interrupt") {
-    stopper.interrupt();
+    if (running?.id === request.id) running.stopper.interrupt();
+    // Otherwise it's still queued (or already finished) — remember it, and
+    // generate() will skip it when it dequeues. Only generate is interruptible;
+    // a transcribe/run/preload id simply never matches and the entry is dropped
+    // when its job completes.
+    else interruptedIds.add(request.id);
     return;
   }
 
