@@ -5,6 +5,11 @@ import {
   isLocalBaseURL,
   parseConnection,
 } from "@/lib/connection";
+import {
+  assertFetchableBaseURL,
+  isHostedDeploy,
+  UNREACHABLE,
+} from "@/lib/connection-policy";
 
 /**
  * The BYO-connection endpoint, shared by chat and codegen. Both hold the same
@@ -58,36 +63,61 @@ export function providerRoute(cookieName: string) {
       );
     }
 
+    // A localhost endpoint on a hosted Forge is a dead end: this server can't
+    // reach the user's machine, and the local story on a deploy is the in-browser
+    // WebGPU model, not the user's own Ollama. Reject it rather than store a
+    // connection that can never work. Locally (next dev) it's the intended path.
+    if (isLocalBaseURL(baseURL) && isHostedDeploy()) {
+      return Response.json(
+        {
+          error:
+            "A localhost endpoint isn't reachable from a hosted Forge — run a browser model, or bring a cloud provider.",
+        },
+        { status: 400 }
+      );
+    }
+
     // A localhost endpoint is only reachable from the browser, not this server —
     // the client verified it before POSTing, and the model runs client-side too.
     // For a cloud endpoint, catch a bad key or wrong URL HERE, not as a confusing
     // failure on the first message. /models is standard and free; a 404 means the
     // endpoint is reachable but has no catalog (some servers) — a soft pass.
     if (!isLocalBaseURL(baseURL)) {
+      // Constrain what the server will fetch: reject non-http(s) schemes always,
+      // and on a hosted deploy refuse private/loopback/link-local targets, so the
+      // route can't be aimed at the operator's own network (SSRF).
+      try {
+        await assertFetchableBaseURL(baseURL);
+      } catch (error) {
+        return Response.json(
+          { error: error instanceof Error ? error.message : UNREACHABLE },
+          { status: 400 }
+        );
+      }
+
+      // A hosted deploy answers every verification failure identically: the
+      // difference between "unreachable", "key rejected" and "HTTP 500" is a
+      // readout of what the host can reach. Locally it's just a useful error.
+      const fail = (message: string, status: number) =>
+        isHostedDeploy()
+          ? Response.json({ error: UNREACHABLE }, { status: 502 })
+          : Response.json({ error: message }, { status });
+
       let res: Response;
       try {
         res = await fetch(`${baseURL}/models`, {
           headers: { Authorization: `Bearer ${apiKey}` },
         });
       } catch {
-        return Response.json(
-          { error: `Couldn't reach ${host}. Check the base URL.` },
-          { status: 502 }
-        );
+        return fail(`Couldn't reach ${host}. Check the base URL.`, 502);
       }
 
       if (res.status === 401 || res.status === 403) {
-        return Response.json(
-          { error: `That key was rejected by ${host}.` },
-          { status: 401 }
-        );
+        return fail(`That key was rejected by ${host}.`, 401);
       }
       // Anything other than OK or a missing-catalog 404 is a real problem.
       if (!res.ok && res.status !== 404) {
-        return Response.json(
-          { error: `${host} rejected the connection (HTTP ${res.status}).` },
-          { status: 502 }
-        );
+        return fail(`${host} rejected the connection (HTTP ${res.status}).`, 502);
       }
     }
 
