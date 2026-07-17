@@ -14,6 +14,7 @@ import {
   formatBytes,
   removeCachedModel,
 } from "@/lib/model-cache";
+import { releaseModel } from "@/lib/worker-client";
 import { isLocalBaseURL } from "@/lib/connection";
 import { listOllamaModels, removeOllamaModel } from "@/lib/ollama-storage";
 
@@ -91,6 +92,9 @@ export default function DownloadedPage() {
       location: "this browser",
       onConfirm: async () => {
         await removeCachedModel(e.id);
+        // The disk copy is gone; drop the GPU copy too, or "removed" is only
+        // half true and the VRAM stays occupied for the life of the tab.
+        await releaseModel(e.id);
         toast.success(`${e.label} removed`);
         await refreshBrowser();
       },

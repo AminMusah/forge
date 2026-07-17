@@ -59,6 +59,11 @@ export type WorkerRequest =
     }
   // Download and compile ahead of time, so the first message streams at once.
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
+  // Drop the warm model and free its GPU memory. Carries the modelId rather than
+  // the full load key: the caller (removing a downloaded model) knows the model,
+  // not which task/dtype it happens to be warm under. An unmatched id is a no-op,
+  // so releasing something that isn't loaded is harmless.
+  | { type: "release"; id: string; modelId: string }
   // Names the request it cancels: the worker is shared by chat, dictation and
   // every playground run, so an unaddressed interrupt would cancel whichever
   // job happened to be running.
@@ -120,6 +125,11 @@ type Loaded =
 
 let loaded: Loaded | null = null;
 let loadedKey: string | null = null;
+// The model id of the warm model, stored rather than parsed out of loadedKey:
+// release() matches on the model alone (the caller doesn't know the task/dtype),
+// and a string split of `${task}:${modelId}:${dtype}` is a trap waiting for the
+// first id with a colon in it.
+let loadedModelId: string | null = null;
 
 // Cancellation is per-request. The running generate job owns its own stopping
 // criteria; an interrupt that arrives while its job is still QUEUED lands here
@@ -172,6 +182,7 @@ async function load(
     await loaded.pipe.dispose();
     loaded = null;
     loadedKey = null;
+    loadedModelId = null;
   }
 
   post({ type: "progress", id, text: "Loading model…" });
@@ -245,6 +256,7 @@ async function load(
   }
 
   loadedKey = key;
+  loadedModelId = modelId;
   return loaded!;
 }
 
@@ -395,6 +407,22 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
  * still replying, and the transcribe request would pull the weights out from
  * under the reply. Serialising means a swap can only ever happen between jobs.
  */
+/**
+ * Drop the warm model if it's the one named. Queued like any other job: a
+ * dispose() racing a running generation would pull the weights out from under
+ * it, which is the hazard the queue exists to prevent.
+ */
+async function release(request: Extract<WorkerRequest, { type: "release" }>) {
+  const { id, modelId } = request;
+  if (loaded && loadedModelId === modelId) {
+    await loaded.pipe.dispose();
+    loaded = null;
+    loadedKey = null;
+    loadedModelId = null;
+  }
+  post({ type: "done", id });
+}
+
 let queue: Promise<void> = Promise.resolve();
 
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
@@ -418,6 +446,9 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         case "preload":
           await load(request.modelId, request.dtype, request.task, request.id);
           post({ type: "done", id: request.id });
+          break;
+        case "release":
+          await release(request);
           break;
         case "transcribe":
           await transcribe(request);

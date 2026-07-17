@@ -112,3 +112,31 @@ export function request(
     if (abortSignal?.aborted) onAbort();
   });
 }
+
+/**
+ * Drop a model from the worker's memory. The disk cache and the GPU copy are
+ * separate: removeCachedModel() frees the bytes on disk, but the compiled model
+ * stays resident for the life of the tab unless someone says otherwise — so
+ * "Remove model" reported success while the VRAM stayed occupied.
+ */
+export async function releaseModel(modelId: string): Promise<void> {
+  // No worker means nothing is loaded — don't spawn one just to free nothing.
+  if (!worker) return;
+  await request({ type: "release", modelId });
+}
+
+/**
+ * Tear the worker down entirely, freeing the GPU. For leaving the page — NOT for
+ * unmounting a chat: the warm model surviving navigation is the whole point of
+ * the singleton, and re-compiling costs tens of seconds.
+ */
+export function terminateWorker(): void {
+  worker?.terminate();
+  worker = null;
+}
+
+// Leaving the page should hand the GPU back rather than waiting for the tab to
+// be reclaimed. pagehide (not beforeunload) also covers the bfcache path.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => terminateWorker());
+}
