@@ -1,12 +1,9 @@
 import { decodeToMono16k } from "@/lib/audio";
-import { getWorker } from "@/lib/browser-transport";
+import { transcribeSamples } from "@/lib/browser-transport";
 import type { HfTask } from "@/lib/hf-tasks";
 import type { Dtype } from "@/lib/model-cache";
-import type {
-  RunInput,
-  WorkerRequest,
-  WorkerResponse,
-} from "@/lib/browser-model.worker";
+import { request } from "@/lib/worker-client";
+import type { RunInput } from "@/lib/browser-model.worker";
 
 /**
  * The bridge between a generated playground (running in a sandboxed iframe) and
@@ -56,44 +53,31 @@ async function runViaWorker(
   // transcribe branch above).
   if (input.audio) {
     onProgress?.("Reading audio…");
-    input = { ...input, audioSamples: await decodeToMono16k(input.audio), audio: undefined };
+    input = {
+      ...input,
+      audioSamples: await decodeToMono16k(input.audio),
+      audio: undefined,
+    };
   }
 
-  const worker = getWorker();
-  const id = crypto.randomUUID();
-
-  return new Promise((resolve, reject) => {
-    const onMessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data;
-      if (data.id !== id) return;
-
-      switch (data.type) {
-        case "progress":
-          onProgress?.(data.text);
-          break;
-        case "result":
-          worker.removeEventListener("message", onMessage);
-          resolve(data.data);
-          break;
-        case "error":
-          worker.removeEventListener("message", onMessage);
-          reject(new Error(data.message));
-          break;
-      }
-    };
-
-    worker.addEventListener("message", onMessage);
-    worker.postMessage({
+  const { data } = await request(
+    {
       type: "run",
-      id,
       task: model.task,
       modelId: model.modelId,
       dtype: model.dtype,
       input,
-    } satisfies WorkerRequest);
-  });
+    },
+    { onProgress }
+  );
+  return data;
 }
 
+/**
+ * ASR reuses the dictation path — same worker request, same accumulation. Only
+ * the shape differs: a playground descriptor expects `{ text }`, dictation wants
+ * the bare string.
+ */
 async function transcribeViaWorker(
   model: PlaygroundModel,
   input: RunInput,
@@ -103,43 +87,9 @@ async function transcribeViaWorker(
   onProgress?.("Reading audio…");
   const audio = await decodeToMono16k(input.audio);
 
-  const worker = getWorker();
-  const id = crypto.randomUUID();
-
-  return new Promise((resolve, reject) => {
-    // transcribe() streams the transcript as token deltas, then done.
-    let text = "";
-    const onMessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data;
-      if (data.id !== id) return;
-
-      switch (data.type) {
-        case "progress":
-          onProgress?.(data.text);
-          break;
-        case "token":
-          text += data.delta;
-          break;
-        case "done":
-          worker.removeEventListener("message", onMessage);
-          resolve({ text });
-          break;
-        case "error":
-          worker.removeEventListener("message", onMessage);
-          reject(new Error(data.message));
-          break;
-      }
-    };
-
-    worker.addEventListener("message", onMessage);
-    worker.postMessage({
-      type: "transcribe",
-      id,
-      modelId: model.modelId,
-      dtype: model.dtype,
-      audio,
-    } satisfies WorkerRequest);
-  });
+  return {
+    text: await transcribeSamples(audio, model.modelId, model.dtype, onProgress),
+  };
 }
 
 /** Message envelope on the iframe↔parent channel. `__forge` namespaces it. */

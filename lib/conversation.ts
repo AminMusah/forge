@@ -124,7 +124,6 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   // model goes to /api/chat-byo (their own OpenAI-compatible provider);
   // everything else goes to /api/chat (the HF router). Downstream is identical.
   const model = modelOf();
-  const task = model?.task ?? "text-generation";
   // Chosen once, for the life of this instance — which is why a rebind that
   // crosses kinds has to evict rather than just write the store. onFinish and
   // onError close over this instead of re-deriving it from the model flags.
@@ -133,7 +132,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
     // `model &&` narrows for the compiler; selectTransport only answers
     // "browser" for a model it was given.
     model && kind === "browser"
-      ? new BrowserTransport(model.id, model.dtype, task)
+      ? new BrowserTransport(model.id, model.dtype)
       : kind === "local"
         ? new LocalChatTransport(model?.reasoning === true)
         : kind === "byo"

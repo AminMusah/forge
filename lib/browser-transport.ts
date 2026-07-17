@@ -3,11 +3,8 @@ import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import { useModelLoadStore } from "@/hooks/use-model-load-store";
 import type { HfTask } from "@/lib/hf-tasks";
 import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
-import type {
-  ChatTurn,
-  WorkerRequest,
-  WorkerResponse,
-} from "@/lib/browser-model.worker";
+import { request } from "@/lib/worker-client";
+import type { ChatTurn } from "@/lib/browser-model.worker";
 
 const setStatus = (status: string | null) =>
   useModelLoadStore.getState().setStatus(status);
@@ -20,53 +17,17 @@ const setStatus = (status: string | null) =>
  * tokens came from, or even that a transcription isn't a reply.
  */
 
-/** One worker, one warm model — see browser-model.worker.ts. */
-let worker: Worker | null = null;
-
-export function getWorker(): Worker {
-  worker ??= new Worker(new URL("./browser-model.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  return worker;
-}
-
 /**
  * Downloads and compiles a model ahead of use. Resolves once it's warm, so the
  * first message streams immediately instead of paying the WebGPU compile.
  */
-export function preloadModel(
+export async function preloadModel(
   modelId: string,
   dtype: Dtype,
   onProgress?: (status: string) => void,
   task: HfTask = "text-generation"
 ): Promise<void> {
-  const worker = getWorker();
-  const id = crypto.randomUUID();
-
-  return new Promise((resolve, reject) => {
-    const onMessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data;
-      if (data.id !== id) return;
-
-      if (data.type === "progress") onProgress?.(data.text);
-      else if (data.type === "done") {
-        worker.removeEventListener("message", onMessage);
-        resolve();
-      } else if (data.type === "error") {
-        worker.removeEventListener("message", onMessage);
-        reject(new Error(data.message));
-      }
-    };
-
-    worker.addEventListener("message", onMessage);
-    worker.postMessage({
-      type: "preload",
-      id,
-      modelId,
-      dtype,
-      task,
-    } satisfies WorkerRequest);
-  });
+  await request({ type: "preload", modelId, dtype, task }, { onProgress });
 }
 
 /**
@@ -74,51 +35,17 @@ export function preloadModel(
  * chat turn — it produces text for the composer, not a message — so it talks to
  * the worker rather than going through a transport and the Chat instance.
  */
-export function transcribeSamples(
+export async function transcribeSamples(
   audio: Float32Array,
   modelId: string,
   dtype: Dtype,
   onProgress?: (status: string) => void
 ): Promise<string> {
-  const worker = getWorker();
-  const id = crypto.randomUUID();
-
-  return new Promise((resolve, reject) => {
-    // The worker sends the whole transcript as a single delta, but accumulate
-    // rather than assume — the contract is a stream of them.
-    let transcript = "";
-
-    const onMessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data;
-      if (data.id !== id) return;
-
-      switch (data.type) {
-        case "progress":
-          onProgress?.(data.text);
-          break;
-        case "token":
-          transcript += data.delta;
-          break;
-        case "done":
-          worker.removeEventListener("message", onMessage);
-          resolve(transcript);
-          break;
-        case "error":
-          worker.removeEventListener("message", onMessage);
-          reject(new Error(data.message));
-          break;
-      }
-    };
-
-    worker.addEventListener("message", onMessage);
-    worker.postMessage({
-      type: "transcribe",
-      id,
-      modelId,
-      dtype,
-      audio,
-    } satisfies WorkerRequest);
-  });
+  const { text } = await request(
+    { type: "transcribe", modelId, dtype, audio },
+    { onProgress }
+  );
+  return text;
 }
 
 function toChatTurns(messages: UIMessage[]): ChatTurn[] {
@@ -136,8 +63,7 @@ function toChatTurns(messages: UIMessage[]): ChatTurn[] {
 export class BrowserTransport implements ChatTransport<UIMessage> {
   constructor(
     private readonly modelId: string,
-    private readonly dtype: Dtype = DEFAULT_DTYPE,
-    private readonly task: HfTask = "text-generation"
+    private readonly dtype: Dtype = DEFAULT_DTYPE
   ) {}
 
   async sendMessages({
@@ -146,8 +72,6 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
   }: Parameters<ChatTransport<UIMessage>["sendMessages"]>[0]): Promise<
     ReadableStream<UIMessageChunk>
   > {
-    const worker = getWorker();
-    const requestId = crypto.randomUUID();
     const { modelId, dtype } = this;
 
     return new ReadableStream<UIMessageChunk>({
@@ -155,77 +79,42 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
         const answerId = crypto.randomUUID();
         let answerOpen = false;
 
-        const finish = () => {
-          setStatus(null);
-          if (answerOpen) controller.enqueue({ type: "text-end", id: answerId });
-          controller.enqueue({ type: "finish" });
-          controller.close();
-          cleanup();
-        };
-
-        const fail = (message: string) => {
-          setStatus(null);
-          controller.error(new Error(message));
-          cleanup();
-        };
-
-        const onMessage = (event: MessageEvent<WorkerResponse>) => {
-          const data = event.data;
-          if (data.id !== requestId) return;
-
-          switch (data.type) {
-            case "progress":
-              // Transient UI state — never conversation content. Putting it in
-              // the transcript re-ran persistence and markdown parsing on every
-              // one of hundreds of callbacks.
-              setStatus(data.text);
-              break;
-            case "token": {
-              setStatus(null);
-              if (!answerOpen) {
-                controller.enqueue({ type: "text-start", id: answerId });
-                answerOpen = true;
-              }
-              controller.enqueue({
-                type: "text-delta",
-                id: answerId,
-                delta: data.delta,
-              });
-              break;
-            }
-            case "done":
-              finish();
-              break;
-            case "error":
-              fail(data.message);
-              break;
-          }
-        };
-
-        const onAbort = () => {
-          worker.postMessage({ type: "interrupt" } satisfies WorkerRequest);
-        };
-
-        const cleanup = () => {
-          worker.removeEventListener("message", onMessage);
-          abortSignal?.removeEventListener("abort", onAbort);
-        };
-
-        worker.addEventListener("message", onMessage);
-        abortSignal?.addEventListener("abort", onAbort);
-
         controller.enqueue({ type: "start" });
         controller.enqueue({ type: "start-step" });
 
         // BrowserTransport serves CHAT only — every other task runs in a
         // PlaygroundView through the forge bridge, not here.
-        worker.postMessage({
-          type: "generate",
-          id: requestId,
-          modelId,
-          dtype,
-          messages: toChatTurns(messages),
-        } satisfies WorkerRequest);
+        request(
+          { type: "generate", modelId, dtype, messages: toChatTurns(messages) },
+          {
+            // Transient UI state — never conversation content. Putting it in
+            // the transcript re-ran persistence and markdown parsing on every
+            // one of hundreds of callbacks.
+            onProgress: setStatus,
+            onToken: (delta) => {
+              setStatus(null);
+              if (!answerOpen) {
+                controller.enqueue({ type: "text-start", id: answerId });
+                answerOpen = true;
+              }
+              controller.enqueue({ type: "text-delta", id: answerId, delta });
+            },
+            abortSignal,
+          }
+        )
+          .then(() => {
+            setStatus(null);
+            if (answerOpen)
+              controller.enqueue({ type: "text-end", id: answerId });
+            controller.enqueue({ type: "finish" });
+            controller.close();
+          })
+          .catch((error: unknown) => {
+            setStatus(null);
+            controller.error(
+              error instanceof Error ? error : new Error(String(error))
+            );
+          });
       },
     });
   }
