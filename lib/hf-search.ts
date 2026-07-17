@@ -118,7 +118,7 @@ export async function searchHubModels(
           ? (m.pipeline_tag as HfTask)
           : task,
         runtime,
-        // Prefer the quantization the spike verified as coherent.
+        // Prefer the quantization verified as coherent across GPUs.
         dtype: dtypes.includes(DEFAULT_DTYPE) ? DEFAULT_DTYPE : dtypes[0],
         dtypes: isBrowser ? dtypes : undefined,
         // Pin single-provider models; multi-provider models keep auto-routing.

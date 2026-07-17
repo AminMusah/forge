@@ -9,8 +9,8 @@
  *     .map((k) => k.replace(/Pipeline$/, "").replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase())
  *
  * But NOT only those: `image-text-to-text` has no pipeline() at all — every
- * vision-language model lives outside that abstraction and is driven through its
- * own model class (see the Florence-2 branch in browser-model.worker.ts). This
+ * vision-language model needs its own model class, so the worker's generic
+ * pipeline path can't drive one and Forge doesn't run this task today. This
  * list tracks what the HUB calls a task, not what transformers.js wraps.
  */
 export const hfTasks = [

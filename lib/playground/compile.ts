@@ -4,12 +4,13 @@
  *
  * Runs in the PARENT (Forge's page), not the sandboxed iframe: the parent
  * compiles, then injects the JS into the iframe's srcdoc. esbuild here is Forge's
- * own build tooling (like the codegen agent) — its wasm loading from a CDN is the
- * same category as loading a library, and doesn't touch the user's model or data.
+ * own build tooling (like the codegen agent) — its wasm, served from Forge's own
+ * origin, is the same category as loading a library, and doesn't touch the user's
+ * model or data.
  *
- * Cut-1 slice 2 uses `transform` (single-file JSX→JS). The real system will use
- * `build` + a resolve plugin for multi-file generated apps; this proves the wasm
- * loads and compiles under Next/Turbopack, which is the unknown.
+ * Single-file by design: `transform` (TSX→JS), not `build`. A model-testing
+ * playground is one screen, and the prompt, the store's one-version-per-message
+ * shape and the per-version compile cache all assume a single file.
  */
 
 // Served from Forge's own origin (scripts/vendor-deps.mjs copies it from the

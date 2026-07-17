@@ -12,7 +12,7 @@ const CACHE_NAME = "transformers-cache";
 
 export type Dtype = "q4" | "q4f16" | "fp16" | "int8";
 
-/** The one the spike verified as coherent; q4f16 degenerates on some GPUs. */
+/** Verified coherent across GPUs; q4f16 degenerates into loops on some of them. */
 export const DEFAULT_DTYPE: Dtype = "q4";
 
 /**

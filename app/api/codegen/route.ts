@@ -16,7 +16,7 @@ import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 
 /**
- * Generates a playground UI for a task, from its descriptor. Cut-2 slice 1.
+ * Generates a playground UI for a task, from its descriptor.
  *
  * Its own route and model, separate from /api/chat: codegen is a distinct,
  * user-choosable capability (see lib/playground/codegen-provider.ts). The

@@ -6,7 +6,7 @@ import type { Connection } from "@/lib/playground/codegen-connection";
 /**
  * The codegen model — the cloud AI that writes playground UIs.
  *
- * Resolution, deliberately (see forge-byo-key-design):
+ * Resolution, deliberately:
  *   1. the user's BYO connection (their key, their quota) — the only path.
  *   2. null — nothing configured; the route answers 401 "add a codegen key".
  *
