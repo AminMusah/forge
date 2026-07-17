@@ -19,6 +19,19 @@ const IMPORT_MAP = {
   },
 };
 
+/**
+ * The HTML parser ends script data at the first `</script`, wherever it occurs —
+ * including inside a JS string literal, which esbuild preserves verbatim. A
+ * generated playground that so much as mentions the closing tag in a label would
+ * terminate its own module early and render blank, and compilation SUCCEEDS, so
+ * the auto-fix loop never sees an error to fix.
+ *
+ * `<\/script` is the same string to JavaScript and invisible to the HTML parser.
+ * Scoped to `</script` on purpose: escaping every `</` would corrupt regex
+ * literals like /a</ .
+ */
+const escapeScriptClose = (js: string) => js.replace(/<\/script/gi, "<\\/script");
+
 export function buildPlaygroundSrcdoc(compiledJs: string): string {
   return `<!doctype html>
 <html>
@@ -34,7 +47,7 @@ export function buildPlaygroundSrcdoc(compiledJs: string): string {
 <div id="root"></div>
 <script>${FORGE_SDK_SOURCE}</script>
 <script type="module">
-${compiledJs}
+${escapeScriptClose(compiledJs)}
 </script>
 </body>
 </html>`;
