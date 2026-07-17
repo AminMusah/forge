@@ -17,6 +17,13 @@ export const DICTATION_DTYPE: Dtype = DEFAULT_DTYPE;
 /** Below this RMS the clip is silence: a muted mic, not a quiet talker. */
 export const SILENCE_LEVEL = 0.001;
 
+/**
+ * How long to wait for the recorder's stop event before giving up on the tail.
+ * Generous: it normally fires in milliseconds, so reaching this means the
+ * recorder is wedged, and hanging the composer is worse than a clipped tail.
+ */
+const FLUSH_TIMEOUT_MS = 2000;
+
 export interface Recording {
   /** Mono 16kHz samples, ready for Whisper. */
   samples: Float32Array;
@@ -60,12 +67,19 @@ export class MicRecorder {
     if (!recorder) throw new Error("Not recording.");
 
     // The final chunk only lands on the stop event — reading immediately after
-    // calling stop() truncates the tail of the recording.
-    const flushed = new Promise<void>((resolve) => {
-      recorder.addEventListener("stop", () => resolve(), { once: true });
-    });
-    if (recorder.state !== "inactive") recorder.stop();
-    await flushed;
+    // calling stop() truncates the tail of the recording. But the event only
+    // comes if we're the ones stopping it: an already-inactive recorder (mic
+    // unplugged, track ended, browser stopped it) will never fire one, and
+    // waiting for it pinned the composer in "transcribing" with no way out.
+    if (recorder.state !== "inactive") {
+      await new Promise<void>((resolve) => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+        // A stop event that never arrives shouldn't hang the composer either —
+        // whatever chunks landed are still worth transcribing.
+        setTimeout(resolve, FLUSH_TIMEOUT_MS);
+        recorder.stop();
+      });
+    }
 
     const blob = new Blob(this.chunks, { type: recorder.mimeType });
     this.release();
