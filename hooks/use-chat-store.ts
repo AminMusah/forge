@@ -1,41 +1,88 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import type { PersistStorage, StorageValue } from "zustand/middleware";
 
 import type { Chat, ChatMessage, MessageFile } from "@/lib/types";
 
 /**
  * Transcripts are synced into the store on every streamed token — cheap in
- * memory, but serialising every chat to localStorage that often is not. Batch
- * the writes; the last one always lands.
+ * memory, but serialising every chat to localStorage that often is not.
+ *
+ * This is a PersistStorage rather than a plain Storage on purpose: zustand's
+ * createJSONStorage stringifies BEFORE it reaches the inner Storage, so
+ * debouncing there still pays the full JSON.stringify of every chat per token.
+ * Holding the object and stringifying inside flush() is what actually batches
+ * the work.
+ *
+ * A trailing-only debounce would never fire mid-stream (tokens arrive faster
+ * than `wait` resets it), so `maxWait` guarantees progress, and a pagehide
+ * flush is what makes a reload mid-reply keep what arrived.
  */
-function debouncedLocalStorage(wait: number): Storage {
+function debouncedChatStorage(
+  wait: number,
+  maxWait: number
+): PersistStorage<{ chats: Chat[] }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let pending: [string, string] | undefined;
+  let pending: [string, StorageValue<{ chats: Chat[] }>] | undefined;
+  let firstPendingAt: number | undefined;
 
   const flush = () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
     if (!pending) return;
-    const [key, value] = pending;
+    const [name, value] = pending;
     pending = undefined;
+    firstPendingAt = undefined;
     try {
-      localStorage.setItem(key, value);
+      localStorage.setItem(name, JSON.stringify(value));
     } catch {
       // Quota exceeded — keep the session usable rather than throwing; the
       // in-memory store is still correct, only the write is lost.
     }
   };
 
+  // The store is only ever persisted client-side; guard so a server render or
+  // a non-browser environment can't touch window.
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+  }
+
   return {
-    getItem: (key) => localStorage.getItem(key),
-    removeItem: (key) => {
-      pending = undefined;
-      localStorage.removeItem(key);
+    getItem: (name) => {
+      const raw = localStorage.getItem(name);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as StorageValue<{ chats: Chat[] }>;
+      } catch {
+        // Corrupt payload — start clean rather than wedging hydration.
+        return null;
+      }
     },
-    setItem: (key, value) => {
-      pending = [key, value];
+    setItem: (name, value) => {
+      pending = [name, value];
+      firstPendingAt ??= Date.now();
+      // Past the ceiling, write now: a stream would otherwise reset the timer
+      // forever and nothing would ever land.
+      if (Date.now() - firstPendingAt >= maxWait) {
+        flush();
+        return;
+      }
       clearTimeout(timer);
       timer = setTimeout(flush, wait);
     },
-  } as Storage;
+    removeItem: (name) => {
+      pending = undefined;
+      firstPendingAt = undefined;
+      clearTimeout(timer);
+      timer = undefined;
+      localStorage.removeItem(name);
+    },
+  };
 }
 
 function today() {
@@ -167,7 +214,7 @@ export const useChatStore = create<ChatStore>()(
     {
       name: "forge-chats",
       version: 1,
-      storage: createJSONStorage(() => debouncedLocalStorage(500)),
+      storage: debouncedChatStorage(500, 2000),
       // Hydration is triggered explicitly on mount so the server's empty render
       // and the client's stored chats can't disagree.
       skipHydration: true,
