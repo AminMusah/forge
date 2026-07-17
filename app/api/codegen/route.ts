@@ -32,8 +32,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // The user's BYO connection wins outright; the shared GROQ_API_KEY is the
-  // on-ramp for users who haven't brought one. codegenModel() encodes the order.
+  // Codegen is strictly bring-your-own: no BYO connection means no model, so
+  // this route answers 401. There is deliberately no shared key (see
+  // codegen-provider.ts) — a public deploy must not proxy the operator's credits.
   const connection = parseConnection(
     (await cookies()).get(CODEGEN_COOKIE)?.value
   );

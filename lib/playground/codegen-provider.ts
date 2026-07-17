@@ -6,20 +6,19 @@ import type { Connection } from "@/lib/playground/codegen-connection";
 /**
  * The codegen model — the cloud AI that writes playground UIs.
  *
- * Resolution order, deliberately (see forge-byo-key-design):
- *   1. the user's BYO connection (their key, their quota) — wins OUTRIGHT, with
- *      no fallback to the shared key, so a depleted user key never spills onto
- *      Forge's bill.
- *   2. the shared default (GROQ_API_KEY) — the zero-setup on-ramp for users who
- *      haven't brought a key.
- *   3. null — nothing configured; the route answers 401 "add a codegen key".
+ * Resolution, deliberately (see forge-byo-key-design):
+ *   1. the user's BYO connection (their key, their quota) — the only path.
+ *   2. null — nothing configured; the route answers 401 "add a codegen key".
+ *
+ * Codegen is strictly bring-your-own: Forge holds NO provider key of its own
+ * (see app/api/chat/route.ts:28-29). There is deliberately no shared server-side
+ * default, because Forge is deployed at a public URL and a shared key on this
+ * unauthenticated route would be an unmetered LLM proxy on the operator's bill.
+ * A first-time user's "taste" comes from an in-browser model, not a shared key.
  *
  * Every provider is reached through ONE OpenAI-compatible seam — a provider is
- * just a base URL. The shared default is the same seam pointed at Groq.
+ * just a base URL.
  */
-
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const GROQ_CODEGEN_MODEL = "openai/gpt-oss-120b";
 
 export interface CodegenModel {
   model: LanguageModel;
@@ -43,14 +42,6 @@ export function codegenModel(
     return {
       model: openAICompatible("byo", connection.baseURL, connection.apiKey, connection.modelId),
       label: `BYO · ${connection.modelId}`,
-    };
-  }
-
-  const groqKey = process.env.GROQ_API_KEY;
-  if (groqKey) {
-    return {
-      model: openAICompatible("groq", GROQ_BASE_URL, groqKey, GROQ_CODEGEN_MODEL),
-      label: `Groq · ${GROQ_CODEGEN_MODEL}`,
     };
   }
 
