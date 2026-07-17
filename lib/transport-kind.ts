@@ -15,6 +15,15 @@ import type { Model } from "@/lib/types";
 export type TransportKind = "browser" | "local" | "byo" | "hf-router";
 
 /**
+ * Marks a model id as belonging to the BYO connection rather than the catalog.
+ *
+ * Lives here rather than with the model store because selectTransport must read
+ * it without importing the store — the point of this module is that it can be
+ * exercised without standing up the store graph.
+ */
+export const BYO_CHAT_PREFIX = "byo-chat:";
+
+/**
  * The transport decision, as a pure function of the two facts it turns on.
  *
  * `Model.runtime` and `Model.chatConnection` are NOT interchangeable and don't
@@ -28,15 +37,24 @@ export type TransportKind = "browser" | "local" | "byo" | "hf-router";
  * it can be exercised without standing up the store graph.
  */
 export function selectTransport(
-  // Absent when a chat's pinned model has been deleted from the catalog, or
-  // when a BYO connection was cleared out from under it — both fall to the
-  // router, which is the only backend that can answer without local config.
+  // Absent when a chat's pinned model has been deleted from the catalog, or —
+  // for a BYO chat — simply not resolved YET; see modelId below.
   model: Model | null | undefined,
-  chatBaseURL: string | null
+  chatBaseURL: string | null,
+  /**
+   * The chat's pinned id. Load-bearing when the model can't be resolved: the
+   * chat provider is fetched after mount (its key is httpOnly, so only the
+   * server knows one is set), so on a fresh load a BYO chat has no model to
+   * resolve against — but its ID still says it is one. Without this the first
+   * message goes to the router and asks for a Hugging Face token the user never
+   * chose. /api/chat-byo reads the connection from the cookie server-side, so it
+   * can answer even while the client is still ignorant of it.
+   */
+  modelId?: string
 ): TransportKind {
   // A browser model runs on the user's GPU whatever else is configured.
   if (model?.runtime === "browser") return "browser";
-  if (model?.chatConnection) {
+  if (model?.chatConnection || modelId?.startsWith(BYO_CHAT_PREFIX)) {
     // A localhost provider must be called from the browser — a hosted server
     // can't reach the user's machine — so it needs its own transport rather
     // than the /api/chat-byo round trip.
@@ -63,6 +81,6 @@ export function transportFor(
   chatBaseURL: string | null,
   modelId: string | undefined
 ): { kind: TransportKind; identity: string } {
-  const kind = selectTransport(model, chatBaseURL);
+  const kind = selectTransport(model, chatBaseURL, modelId);
   return { kind, identity: `${kind}:${modelId ?? ""}` };
 }

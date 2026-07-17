@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import type { HfTask } from "@/lib/hf-tasks";
 import { defaultChatModel, defaultModels } from "@/lib/models";
+import { BYO_CHAT_PREFIX } from "@/lib/transport-kind";
 import type { Model } from "@/lib/types";
 
 interface ModelStore {
@@ -76,9 +77,6 @@ export const useModelStore = create<ModelStore>()(
     }
   )
 );
-
-/** Marks an id as belonging to the BYO connection rather than the catalog. */
-export const BYO_CHAT_PREFIX = "byo-chat:";
 
 /**
  * The model a chat's pinned id refers to.

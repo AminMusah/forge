@@ -50,11 +50,13 @@ export function ChatPlaceholder() {
       </div>
 
       <div className="w-full max-w-2xl">
+        {/* No task filter on either branch: an open chat pins its menu to its
+            own task, but here switching task is how you reach another surface —
+            filtering to the selected model's task strands you on it. */}
         {isPlayground ? (
           <ChatInput
             onSend={handleStartPlayground}
             autoFocus
-            task={task}
             placeholder={`Describe the playground — e.g. "let me drop a file and see the model's output"`}
           />
         ) : (
