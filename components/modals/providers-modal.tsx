@@ -19,10 +19,10 @@ import { useModal } from "@/hooks/use-modal-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { retryPendingConversations } from "@/lib/conversation";
 import {
-  CODEGEN_PRESETS,
+  PROVIDER_PRESETS,
   isLocalBaseURL,
   listLocalModels,
-} from "@/lib/playground/codegen-connection";
+} from "@/lib/connection";
 import { cn } from "@/lib/utils";
 
 /**
@@ -194,12 +194,12 @@ function ConnectionSection({
 
   // Prefill from what's stored, else the first (Groq) preset.
   React.useEffect(() => {
-    const preset = CODEGEN_PRESETS[0];
+    const preset = PROVIDER_PRESETS[0];
     setBaseURL(storedBaseURL ?? preset.baseURL);
     setModelId(storedModelId ?? preset.defaultModelId);
   }, [storedBaseURL, storedModelId]);
 
-  const activePreset = CODEGEN_PRESETS.find((p) => p.baseURL === baseURL);
+  const activePreset = PROVIDER_PRESETS.find((p) => p.baseURL === baseURL);
   // A local endpoint (Ollama) needs no key — don't require one to save.
   const local = isLocalBaseURL(baseURL);
 
@@ -234,7 +234,7 @@ function ConnectionSection({
     (local || Boolean(apiKey.trim()));
 
   const applyPreset = (value: string) => {
-    const preset = CODEGEN_PRESETS.find((p) => p.baseURL === value);
+    const preset = PROVIDER_PRESETS.find((p) => p.baseURL === value);
     if (!preset) return;
     setBaseURL(preset.baseURL);
     setModelId(preset.defaultModelId);
@@ -284,7 +284,7 @@ function ConnectionSection({
           )}
         >
           {!activePreset && <option value="">Custom</option>}
-          {CODEGEN_PRESETS.map((p) => (
+          {PROVIDER_PRESETS.map((p) => (
             <option key={p.baseURL} value={p.baseURL}>
               {p.label}
             </option>

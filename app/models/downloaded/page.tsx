@@ -14,7 +14,7 @@ import {
   formatBytes,
   removeCachedModel,
 } from "@/lib/model-cache";
-import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
+import { isLocalBaseURL } from "@/lib/connection";
 import { listOllamaModels, removeOllamaModel } from "@/lib/ollama-storage";
 
 /** A row in the storage list — a model on disk we can measure and free. */

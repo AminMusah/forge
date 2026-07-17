@@ -15,7 +15,7 @@ import { reasoningMiddleware, withoutReasoning } from "@/lib/reasoning";
 import {
   CHAT_COOKIE,
   parseConnection,
-} from "@/lib/playground/codegen-connection";
+} from "@/lib/connection";
 
 /**
  * Chat against the user's BYO OpenAI-compatible connection (local Ollama, or a

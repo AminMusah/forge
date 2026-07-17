@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 
-import type { Connection } from "@/lib/playground/codegen-connection";
+import type { Connection } from "@/lib/connection";
 
 /**
  * The codegen model — the cloud AI that writes playground UIs.

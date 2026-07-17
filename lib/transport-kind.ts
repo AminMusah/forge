@@ -1,4 +1,4 @@
-import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
+import { isLocalBaseURL } from "@/lib/connection";
 import type { Model } from "@/lib/types";
 
 /**

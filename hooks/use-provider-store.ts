@@ -3,7 +3,7 @@ import { create } from "zustand";
 import {
   isLocalBaseURL,
   verifyLocalConnection,
-} from "@/lib/playground/codegen-connection";
+} from "@/lib/connection";
 
 /**
  * A BYO connection as the client sees it. The apiKey lives in an httpOnly cookie

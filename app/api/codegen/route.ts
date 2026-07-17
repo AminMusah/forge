@@ -11,7 +11,7 @@ import { codegenModel } from "@/lib/playground/codegen-provider";
 import {
   CODEGEN_COOKIE,
   parseConnection,
-} from "@/lib/playground/codegen-connection";
+} from "@/lib/connection";
 import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 

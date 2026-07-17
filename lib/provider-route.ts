@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   isLocalBaseURL,
   parseConnection,
-} from "@/lib/playground/codegen-connection";
+} from "@/lib/connection";
 
 /**
  * The BYO-connection endpoint, shared by chat and codegen. Both hold the same
@@ -13,7 +13,7 @@ import {
  * cloud endpoint the same way. They differ in one thing: which cookie they own.
  *
  * Server-only — this imports next/headers, which is why it lives here rather
- * than in codegen-connection, which is isomorphic on purpose.
+ * than in lib/connection.ts, which is isomorphic on purpose.
  */
 
 const bodySchema = z.object({

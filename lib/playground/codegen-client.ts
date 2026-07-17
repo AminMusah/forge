@@ -5,7 +5,7 @@ import {
   buildCodegenPrompt,
   extractCode,
 } from "@/lib/playground/codegen-prompt";
-import { isLocalBaseURL } from "@/lib/playground/codegen-connection";
+import { isLocalBaseURL } from "@/lib/connection";
 import { descriptorFor } from "@/lib/playground/descriptors";
 
 /**

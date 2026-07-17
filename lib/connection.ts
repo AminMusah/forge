@@ -1,6 +1,12 @@
 /**
- * The BYO codegen connection: an OpenAI-compatible endpoint the user brings, so
- * their own quota — not Forge's shared key — powers playground generation.
+ * A BYO connection: an OpenAI-compatible endpoint the user brings, so their own
+ * quota powers the work. Shared by BOTH the chat provider and the codegen
+ * provider — same shape, same cookie handling, same verification; they differ
+ * only in which cookie they own.
+ *
+ * It lives at lib/ rather than lib/playground/ because chat depends on it too,
+ * and a chat credential declared inside the playground namespace is how the
+ * chat routes ended up importing from a module named for a feature they don't use.
  *
  * ONE credential shape for every provider: `{ baseURL, apiKey, modelId }`. Groq,
  * OpenAI, Gemini, Anthropic, OpenRouter and a local Ollama all speak the OpenAI
@@ -22,17 +28,13 @@ export interface Connection {
 }
 
 /** A picker entry. Data only — adding a provider is never a code change. */
-export interface CodegenPreset {
+export interface ProviderPreset {
   label: string;
   baseURL: string;
   /** A sane default coder to prefill; the user can override it. */
   defaultModelId: string;
   /** Where to mint a key, shown as a hint. Omitted for keyless local. */
   keyUrl?: string;
-  /** True for localhost endpoints — reachable only from the browser, not a
-   * hosted server. The Ollama/local path is deferred, but the flag is here so
-   * the UI can note it and later routing can branch on it. */
-  local?: boolean;
 }
 
 /**
@@ -40,7 +42,7 @@ export interface CodegenPreset {
  * — proprietary providers are available but not the front door. Both Anthropic
  * and Google expose OpenAI-compatible base URLs, so they fit the same seam.
  */
-export const CODEGEN_PRESETS: CodegenPreset[] = [
+export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     label: "Groq",
     baseURL: "https://api.groq.com/openai/v1",
@@ -81,7 +83,6 @@ export const CODEGEN_PRESETS: CodegenPreset[] = [
     label: "Local (Ollama)",
     baseURL: "http://localhost:11434/v1",
     defaultModelId: "qwen2.5-coder",
-    local: true,
   },
 ];
 

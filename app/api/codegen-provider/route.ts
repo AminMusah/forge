@@ -1,4 +1,4 @@
-import { CODEGEN_COOKIE } from "@/lib/playground/codegen-connection";
+import { CODEGEN_COOKIE } from "@/lib/connection";
 import { providerRoute } from "@/lib/provider-route";
 
 /**
