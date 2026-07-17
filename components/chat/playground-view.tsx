@@ -203,12 +203,21 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
     });
   }, [srcdoc, model]);
 
+  // Leaving mid-generation must cancel the work, not just look like it did: the
+  // request and its auto-fix follow-ups keep billing the provider otherwise, and
+  // appendTurns would write versions into a chat the user has already left.
+  // run()'s catch already treats an aborted signal as "Stopped", not an error.
+  React.useEffect(() => () => abortRef.current?.abort(), []);
+
   const modify = () => {
     const change = instruction.trim();
     const code = versions.find((v) => v.id === current)?.content;
-    if (!change || !code) return;
+    // Guard model here, not just in run(): `model!.task` is evaluated at this
+    // call site, so an unknown pinned model threw a TypeError before run()'s own
+    // guard could no-op. The catalog legitimately may not hold it.
+    if (!model || !change || !code) return;
     setInstruction("");
-    void run({ task: model!.task, previousCode: code, instruction: change }, change);
+    void run({ task: model.task, previousCode: code, instruction: change }, change);
   };
 
   const regenerate = () => {
