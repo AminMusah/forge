@@ -1,12 +1,11 @@
 import { createHuggingFace } from "@ai-sdk/huggingface";
 import {
   APICallError,
-  extractReasoningMiddleware,
   wrapLanguageModel,
   type LanguageModel,
 } from "ai";
 
-import { THINK_TAG } from "@/lib/reasoning";
+import { reasoningMiddleware } from "@/lib/reasoning";
 
 /**
  * Everything Forge knows about the Hugging Face router, in one place. All of
@@ -164,10 +163,7 @@ export function hfModel({
 
   return wrapLanguageModel({
     model: huggingFace(provider ? `${modelId}:${provider}` : modelId),
-    middleware: extractReasoningMiddleware({
-      tagName: THINK_TAG,
-      startWithReasoning: reasoning === true,
-    }),
+    middleware: reasoningMiddleware(reasoning === true),
   });
 }
 

@@ -4,7 +4,6 @@ import {
   streamText,
   convertToModelMessages,
   createUIMessageStreamResponse,
-  extractReasoningMiddleware,
   toUIMessageStream,
   wrapLanguageModel,
   type UIMessage,
@@ -12,7 +11,7 @@ import {
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 import { describeError } from "@/lib/hf-router";
-import { THINK_TAG } from "@/lib/reasoning";
+import { reasoningMiddleware } from "@/lib/reasoning";
 import {
   CHAT_COOKIE,
   parseConnection,
@@ -48,19 +47,15 @@ export async function POST(req: Request) {
   const { messages, reasoning } = parsed.data;
 
   // Some OpenAI-compatible providers stream chain-of-thought inline, closed by
-  // </think> with no opening tag — the same middleware the HF path uses handles
-  // it. (Providers that use a native reasoning_content delta are surfaced by the
-  // SDK provider directly.)
+  // </think> with no opening tag. (Providers that use a native reasoning_content
+  // delta are surfaced by the SDK provider directly.)
   const model = wrapLanguageModel({
     model: createOpenAICompatible({
       name: "byo-chat",
       baseURL: conn.baseURL,
       apiKey: conn.apiKey,
     })(conn.modelId),
-    middleware: extractReasoningMiddleware({
-      tagName: THINK_TAG,
-      startWithReasoning: reasoning === true,
-    }),
+    middleware: reasoningMiddleware(reasoning === true),
   });
 
   const result = streamText({

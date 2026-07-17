@@ -1,7 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   convertToModelMessages,
-  extractReasoningMiddleware,
   streamText,
   toUIMessageStream,
   wrapLanguageModel,
@@ -12,7 +11,7 @@ import {
 
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { friendlyLocalError } from "@/lib/local-errors";
-import { THINK_TAG } from "@/lib/reasoning";
+import { reasoningMiddleware } from "@/lib/reasoning";
 
 /**
  * Chat against a LOCAL (Ollama) endpoint straight from the browser — the peer of
@@ -47,10 +46,7 @@ export class LocalChatTransport implements ChatTransport<UIMessage> {
         baseURL,
         apiKey: "local",
       })(modelId),
-      middleware: extractReasoningMiddleware({
-        tagName: THINK_TAG,
-        startWithReasoning: this.reasoning,
-      }),
+      middleware: reasoningMiddleware(this.reasoning),
     });
 
     const result = streamText({

@@ -1,8 +1,10 @@
+import { extractReasoningMiddleware } from "ai";
+
 /**
  * The `<think>` grammar — the one owner of what Forge knows about how models
- * emit chain-of-thought. Both halves of the pipeline import it: the chat route
- * configures its extraction middleware with THINK_TAG, and the Conversation
- * module uses splitLeakedReasoning for models the server didn't know reason.
+ * emit chain-of-thought. Both halves of the pipeline live here: reasoningMiddleware
+ * is what every chat path wraps its model in, and splitLeakedReasoning catches
+ * what got through for models the server didn't know reason.
  *
  * The awkward case is real: some providers (featherless) stream reasoning with
  * only a *closing* `</think>` and no opening tag, which the server-side
@@ -12,7 +14,24 @@
  *   well-formed    "<think>thinking…</think>ans"   → split
  *   none           "just an answer"                → no reasoning
  */
-export const THINK_TAG = "think";
+const THINK_TAG = "think";
+
+/**
+ * The extraction middleware every chat path wraps its model in — the HF router,
+ * a BYO provider, and a local Ollama endpoint all delimit reasoning the same
+ * way, so they all configure it the same way.
+ *
+ * `reasoning` means the model is KNOWN to emit chain-of-thought (learned from a
+ * previous reply — see markReasoning). Those providers can open the stream
+ * already inside a thought with no `<think>` to announce it, so extraction has
+ * to assume it starts there rather than wait for a tag that never comes.
+ */
+export function reasoningMiddleware(reasoning: boolean) {
+  return extractReasoningMiddleware({
+    tagName: THINK_TAG,
+    startWithReasoning: reasoning,
+  });
+}
 
 const CLOSING_TAG = `</${THINK_TAG}>`;
 const OPENING_TAG = new RegExp(`^\\s*<${THINK_TAG}>\\s*`);
