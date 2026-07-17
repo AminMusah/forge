@@ -35,6 +35,27 @@ const conversations = new Map<
   { instance: Chat<UIMessage>; identity: string }
 >();
 
+/**
+ * Instances superseded by a rebuild, waiting to be stopped AFTER commit.
+ *
+ * conversationOf runs inside a useMemo, and React may discard a render it never
+ * commits (StrictMode's double invocation, a concurrent render, a thrown
+ * Suspense). stop() aborts a live stream and can't be undone, so doing it during
+ * render risks killing a reply for a render that never happened. Building an
+ * instance is safe to repeat — it reseeds from the store — but stopping one is
+ * not, so only the stop is deferred.
+ */
+const supersededInstances = new Set<Chat<UIMessage>>();
+
+/**
+ * Stop everything a rebuild replaced. Called from an effect once the render that
+ * caused the rebuild has actually committed.
+ */
+export function flushSupersededConversations() {
+  for (const instance of supersededInstances) void instance.stop();
+  supersededInstances.clear();
+}
+
 /** Turns that failed for want of a token, resent once one is added. */
 const awaitingToken = new Set<string>();
 
@@ -138,7 +159,10 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   // the connection arrives instead of answering with the stale transport forever.
   const existing = conversations.get(chatId);
   if (existing?.identity === identity) return existing.instance;
-  if (existing) evictConversation(chatId);
+  // Queue the stop rather than doing it here: this runs inside a useMemo, and a
+  // render React discards would otherwise abort a live stream. The map entry is
+  // replaced by the set() below; useConversation flushes the stop after commit.
+  if (existing) supersededInstances.add(existing.instance);
 
   const stored = useChatStore.getState().chats.find((c) => c.id === chatId);
   const transport =

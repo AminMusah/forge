@@ -8,6 +8,7 @@ import { useChatStore } from "@/hooks/use-chat-store";
 import { resolveChatModel, useChatModels } from "@/hooks/use-model-store";
 import {
   conversationOf,
+  flushSupersededConversations,
   sendToConversation,
   syncTranscript,
   transcriptOf,
@@ -53,6 +54,13 @@ export function useConversation(chatId: string): UseConversation {
   // into the new one, and the transcript appears to freeze.
   const transport = useTransportIdentity(chatId);
   const instance = useMemo(() => conversationOf(chatId), [chatId, transport]);
+
+  // Stop whatever this rebuild superseded — after commit, not during the memo.
+  // Keyed on the instance so it runs exactly when a rebuild actually landed.
+  useEffect(() => {
+    flushSupersededConversations();
+  }, [instance]);
+
   const {
     messages: uiMessages,
     status,
