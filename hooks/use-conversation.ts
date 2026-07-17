@@ -5,7 +5,7 @@ import { useChat } from "@ai-sdk/react";
 
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useChatStore } from "@/hooks/use-chat-store";
-import { useChatModels } from "@/hooks/use-model-store";
+import { resolveChatModel, useChatModels } from "@/hooks/use-model-store";
 import {
   conversationOf,
   sendToConversation,
@@ -26,11 +26,8 @@ function useTransportIdentity(chatId: string): string {
   );
   const models = useChatModels();
   const baseURL = useChatProviderStore((state) => state.baseURL);
-  return transportFor(
-    models.find((m) => m.id === modelId),
-    baseURL,
-    modelId
-  ).identity;
+  return transportFor(resolveChatModel(models, modelId), baseURL, modelId)
+    .identity;
 }
 
 interface UseConversation {
@@ -90,8 +87,15 @@ export function useConversation(chatId: string): UseConversation {
     (text: string, file?: MessageFile) => sendToConversation(chatId, text, file),
     [chatId]
   );
-  const handleStop = useCallback(() => void stop(), [stop]);
-  const handleRegenerate = useCallback(() => void regenerate(), [regenerate]);
+  // Aborting is what stop() DOES, so its AbortError rejection is the success
+  // path, not a failure — `void` alone would surface it as an unhandled
+  // rejection in the console. Real failures reach the instance's onError.
+  const handleStop = useCallback(() => {
+    stop().catch(() => {});
+  }, [stop]);
+  const handleRegenerate = useCallback(() => {
+    regenerate().catch(() => {});
+  }, [regenerate]);
 
   return {
     messages,

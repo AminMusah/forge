@@ -77,6 +77,33 @@ export const useModelStore = create<ModelStore>()(
   )
 );
 
+/** Marks an id as belonging to the BYO connection rather than the catalog. */
+export const BYO_CHAT_PREFIX = "byo-chat:";
+
+/**
+ * The model a chat's pinned id refers to.
+ *
+ * A BYO id resolves to the CURRENT connection whatever model it names. There is
+ * only ever one BYO model, so re-pointing the connection at another model — Groq
+ * to a local Ollama, say — must not orphan the chats already using it. Both BYO
+ * transports already read the model from the connection at send time (the cookie
+ * for /api/chat-byo, the store for LocalChatTransport), so the suffix on a
+ * pinned id is a label, not an identity.
+ *
+ * Without this an orphaned chat resolves to no model at all and falls back to
+ * the HF router — demanding a token from someone who never chose it.
+ */
+export function resolveChatModel(
+  models: Model[],
+  modelId: string | undefined
+): Model | undefined {
+  const exact = models.find((m) => m.id === modelId);
+  if (exact) return exact;
+  return modelId?.startsWith(BYO_CHAT_PREFIX)
+    ? models.find((m) => m.id.startsWith(BYO_CHAT_PREFIX))
+    : undefined;
+}
+
 /** The synthetic model backed by a BYO chat connection, keyed by its modelId. */
 function buildChatConnectionModel(modelId: string, baseURL: string | null): Model {
   let host = "your provider";
@@ -86,9 +113,11 @@ function buildChatConnectionModel(modelId: string, baseURL: string | null): Mode
     // Keep the fallback label.
   }
   return {
-    id: `byo-chat:${modelId}`,
+    id: `${BYO_CHAT_PREFIX}${modelId}`,
     name: modelId,
-    description: `Your provider · ${host}`,
+    // Just the host — the picker groups this under "Your provider" already, and
+    // the host is the part that says WHICH provider.
+    description: host,
     task: "text-generation",
     runtime: "server",
     chatConnection: true,
@@ -104,6 +133,16 @@ export function chatConnectionModel(): Model | null {
   const { hasProvider, modelId, baseURL } = useChatProviderStore.getState();
   if (!hasProvider || !modelId) return null;
   return buildChatConnectionModel(modelId, baseURL);
+}
+
+/**
+ * Non-React peer of useChatModels, for conversation.ts — which resolves a chat's
+ * model outside a component. Both must offer the same catalog, or the transport
+ * and the picker would disagree about what a chat is pinned to.
+ */
+export function chatModels(): Model[] {
+  const byo = chatConnectionModel();
+  return [...useModelStore.getState().models, ...(byo ? [byo] : [])];
 }
 
 /**

@@ -5,7 +5,11 @@ import { toast } from "sonner";
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModal } from "@/hooks/use-modal-store";
-import { chatConnectionModel, useModelStore } from "@/hooks/use-model-store";
+import {
+  chatModels,
+  resolveChatModel,
+  useModelStore,
+} from "@/hooks/use-model-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { composeWithFile } from "@/lib/attachments";
 import { BrowserTransport } from "@/lib/browser-transport";
@@ -107,14 +111,9 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
     useChatStore.getState().chats.find((c) => c.id === chatId)?.modelId;
 
   // A BYO-chat model is synthetic (derived from the chat connection), so it
-  // won't be in the persisted store — resolve it separately.
-  const modelOf = () => {
-    const id = modelIdOf();
-    const stored = useModelStore.getState().models.find((m) => m.id === id);
-    if (stored) return stored;
-    const byo = chatConnectionModel();
-    return byo?.id === id ? byo : undefined;
-  };
+  // won't be in the persisted store — chatModels adds it, resolveChatModel
+  // matches it even when the connection has since been re-pointed.
+  const modelOf = () => resolveChatModel(chatModels(), modelIdOf());
 
   // conversationOf serves CHAT (text-generation) — every other task runs in a
   // generated PlaygroundView, which reaches the model through the forge bridge,

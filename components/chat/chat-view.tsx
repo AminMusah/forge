@@ -6,7 +6,11 @@ import { MessageList } from "@/components/chat/message-list";
 import { ChatInput } from "@/components/chat/chat-input";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useConversation } from "@/hooks/use-conversation";
-import { useModelStore } from "@/hooks/use-model-store";
+import {
+  chatModels,
+  resolveChatModel,
+  useModelStore,
+} from "@/hooks/use-model-store";
 
 interface ChatViewProps {
   chatId: string;
@@ -26,11 +30,13 @@ export function ChatView({ chatId }: ChatViewProps) {
   const { messages, streamingId, isStreaming, send, stop, regenerate } =
     useConversation(chatId);
 
-  // Keep the model chip describing the chat being viewed.
+  // Keep the model chip describing the chat being viewed. Resolved through
+  // chatModels so a BYO chat finds its connection — the catalog alone never
+  // holds the synthetic model, so this used to leave the chip on whatever was
+  // last picked.
   useEffect(() => {
-    const { models, setModel } = useModelStore.getState();
-    const model = models.find((m) => m.id === modelId);
-    if (model) setModel(model);
+    const model = resolveChatModel(chatModels(), modelId);
+    if (model) useModelStore.getState().setModel(model);
   }, [modelId]);
 
   if (!exists) {
