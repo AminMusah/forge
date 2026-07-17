@@ -64,6 +64,7 @@ export async function POST(req: Request) {
       withoutReasoning(messages as UIMessage[])
     ),
     maxRetries: 2,
+    abortSignal: req.signal,
   });
 
   return createUIMessageStreamResponse({

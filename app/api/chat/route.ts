@@ -48,6 +48,9 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages as UIMessage[]),
     // Providers cold-start long-tail models; brief failures should self-heal.
     maxRetries: 3,
+    // Stop means stop: without the signal the upstream generation runs to
+    // completion on the caller's own token, billed for a reply nobody sees.
+    abortSignal: req.signal,
   });
 
   return createUIMessageStreamResponse({

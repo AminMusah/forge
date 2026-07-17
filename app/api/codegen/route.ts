@@ -75,6 +75,7 @@ export async function POST(req: Request) {
       // A full single-file playground is a few hundred lines; give it room.
       maxOutputTokens: 4000,
       maxRetries: 2,
+      abortSignal: req.signal,
     });
 
     const code = extractCode(text);
