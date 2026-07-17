@@ -21,9 +21,6 @@ export interface Connection {
   modelId: string;
 }
 
-/** Back-compat alias — codegen was the first consumer of this shape. */
-export type CodegenConnection = Connection;
-
 /** A picker entry. Data only — adding a provider is never a code change. */
 export interface CodegenPreset {
   label: string;
@@ -105,9 +102,6 @@ export function parseConnection(raw: string | undefined): Connection | null {
   }
   return null;
 }
-
-/** Back-compat alias for the first consumer (codegen). */
-export const parseCodegenConnection = parseConnection;
 
 /** True for a localhost base URL (reachable only from the browser). */
 export function isLocalBaseURL(baseURL: string): boolean {

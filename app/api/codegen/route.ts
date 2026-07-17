@@ -10,7 +10,7 @@ import {
 import { codegenModel } from "@/lib/playground/codegen-provider";
 import {
   CODEGEN_COOKIE,
-  parseCodegenConnection,
+  parseConnection,
 } from "@/lib/playground/codegen-connection";
 import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
@@ -34,7 +34,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   // The user's BYO connection wins outright; the shared GROQ_API_KEY is the
   // on-ramp for users who haven't brought one. codegenModel() encodes the order.
-  const connection = parseCodegenConnection(
+  const connection = parseConnection(
     (await cookies()).get(CODEGEN_COOKIE)?.value
   );
   const codegen = codegenModel({ connection });

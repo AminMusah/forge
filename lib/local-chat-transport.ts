@@ -11,7 +11,7 @@ import {
 
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { friendlyLocalError } from "@/lib/local-errors";
-import { reasoningMiddleware } from "@/lib/reasoning";
+import { reasoningMiddleware, withoutReasoning } from "@/lib/reasoning";
 
 /**
  * Chat against a LOCAL (Ollama) endpoint straight from the browser — the peer of
@@ -51,7 +51,7 @@ export class LocalChatTransport implements ChatTransport<UIMessage> {
 
     const result = streamText({
       model,
-      messages: await convertToModelMessages(messages),
+      messages: await convertToModelMessages(withoutReasoning(messages)),
       abortSignal,
       maxRetries: 1,
     });

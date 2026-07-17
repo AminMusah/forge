@@ -11,7 +11,7 @@ import {
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 import { describeError } from "@/lib/hf-router";
-import { reasoningMiddleware } from "@/lib/reasoning";
+import { reasoningMiddleware, withoutReasoning } from "@/lib/reasoning";
 import {
   CHAT_COOKIE,
   parseConnection,
@@ -60,7 +60,9 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model,
-    messages: await convertToModelMessages(messages as UIMessage[]),
+    messages: await convertToModelMessages(
+      withoutReasoning(messages as UIMessage[])
+    ),
     maxRetries: 2,
   });
 

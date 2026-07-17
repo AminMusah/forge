@@ -44,3 +44,25 @@ export function selectTransport(
   }
   return "hf-router";
 }
+
+/**
+ * The kind, plus everything else a transport is built from, as one primitive.
+ *
+ * A conversation is only reusable while its identity holds. Both halves matter
+ * and neither implies the other: a provider edited from a cloud URL to a
+ * localhost one changes the KIND with no rebind, and re-pinning one browser
+ * model to another changes the MODEL with no kind change — BrowserTransport
+ * freezes its model id at construction.
+ *
+ * Defined once because two callers must agree exactly on it: conversationOf
+ * decides whether its cached instance still stands, and useConversation keys its
+ * memo on the same string.
+ */
+export function transportFor(
+  model: Model | null | undefined,
+  chatBaseURL: string | null,
+  modelId: string | undefined
+): { kind: TransportKind; identity: string } {
+  const kind = selectTransport(model, chatBaseURL);
+  return { kind, identity: `${kind}:${modelId ?? ""}` };
+}

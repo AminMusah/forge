@@ -11,7 +11,7 @@ import { composeWithFile } from "@/lib/attachments";
 import { BrowserTransport } from "@/lib/browser-transport";
 import { LocalChatTransport } from "@/lib/local-chat-transport";
 import { splitLeakedReasoning } from "@/lib/reasoning";
-import { selectTransport } from "@/lib/transport-kind";
+import { transportFor } from "@/lib/transport-kind";
 import type { ChatMessage, MessageFile } from "@/lib/types";
 
 /**
@@ -26,7 +26,10 @@ import type { ChatMessage, MessageFile } from "@/lib/types";
  * be: an instance picks its transport once, so re-pinning a chat to a model on
  * another backend has to rebuild the conversation — see rebindConversation.
  */
-const conversations = new Map<string, Chat<UIMessage>>();
+const conversations = new Map<
+  string,
+  { instance: Chat<UIMessage>; identity: string }
+>();
 
 /** Turns that failed for want of a token, resent once one is added. */
 const awaitingToken = new Set<string>();
@@ -100,10 +103,6 @@ function toChatMessages(messages: UIMessage[]): ChatMessage[] {
  * reach for it, so views never handle UIMessage or the instance itself.
  */
 export function conversationOf(chatId: string): Chat<UIMessage> {
-  const existing = conversations.get(chatId);
-  if (existing) return existing;
-
-  const stored = useChatStore.getState().chats.find((c) => c.id === chatId);
   const modelIdOf = () =>
     useChatStore.getState().chats.find((c) => c.id === chatId)?.modelId;
 
@@ -124,10 +123,25 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
   // model goes to /api/chat-byo (their own OpenAI-compatible provider);
   // everything else goes to /api/chat (the HF router). Downstream is identical.
   const model = modelOf();
-  // Chosen once, for the life of this instance — which is why a rebind that
-  // crosses kinds has to evict rather than just write the store. onFinish and
-  // onError close over this instead of re-deriving it from the model flags.
-  const kind = selectTransport(model, useChatProviderStore.getState().baseURL);
+  // Chosen once, for the life of this instance. onFinish and onError close over
+  // the kind rather than re-deriving it from the model flags.
+  const { kind, identity } = transportFor(
+    model,
+    useChatProviderStore.getState().baseURL,
+    modelIdOf()
+  );
+
+  // An instance is reusable only while the inputs it was built from still hold.
+  // Rebinds evict eagerly, but not every change is a rebind: the chat provider is
+  // fetched AFTER mount (its key is httpOnly, so only the server knows it's set),
+  // so a BYO chat's first conversationOf can land before the connection is known,
+  // resolve to the router, and cache that. Comparing identities rebuilds it once
+  // the connection arrives instead of answering with the stale transport forever.
+  const existing = conversations.get(chatId);
+  if (existing?.identity === identity) return existing.instance;
+  if (existing) evictConversation(chatId);
+
+  const stored = useChatStore.getState().chats.find((c) => c.id === chatId);
   const transport =
     // `model &&` narrows for the compiler; selectTransport only answers
     // "browser" for a model it was given.
@@ -169,7 +183,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
       // stream. Its transcript is stale the moment it was replaced, and its
       // empty tail is the abort rather than a router failure — so it must
       // neither write nor toast.
-      if (conversations.get(chatId) !== instance) return;
+      if (conversations.get(chatId)?.instance !== instance) return;
 
       const messages = transcriptOf(chatId, instance.messages);
       const last = messages.at(-1);
@@ -222,7 +236,7 @@ export function conversationOf(chatId: string): Chat<UIMessage> {
     },
   });
 
-  conversations.set(chatId, instance);
+  conversations.set(chatId, { instance, identity });
   return instance;
 }
 
@@ -311,7 +325,7 @@ function dropPartialReply(chatId: string) {
  * BrowserTransport would go on running the model id it froze at construction.
  */
 export function rebindConversation(chatId: string, modelId: string) {
-  const status = conversations.get(chatId)?.status;
+  const status = conversations.get(chatId)?.instance.status;
   const streaming = status === "streaming" || status === "submitted";
   if (!useChatStore.getState().rebindModel(chatId, modelId)) return;
   // Evicting stops the stream; useConversation rebuilds on the kind change.
@@ -325,7 +339,7 @@ export function rebindConversation(chatId: string, modelId: string) {
  */
 export function retryPendingConversations() {
   for (const chatId of awaitingToken) {
-    void conversations.get(chatId)?.sendMessage();
+    void conversations.get(chatId)?.instance.sendMessage();
   }
   awaitingToken.clear();
 }
@@ -336,8 +350,8 @@ export function retryPendingConversations() {
  * conversationOf reseeds from the store, so the transcript survives either way.
  */
 export function evictConversation(chatId: string) {
-  const instance = conversations.get(chatId);
-  if (!instance) return;
-  void instance.stop();
+  const existing = conversations.get(chatId);
+  if (!existing) return;
+  void existing.instance.stop();
   conversations.delete(chatId);
 }

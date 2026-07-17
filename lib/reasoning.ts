@@ -1,4 +1,4 @@
-import { extractReasoningMiddleware } from "ai";
+import { extractReasoningMiddleware, type UIMessage } from "ai";
 
 /**
  * The `<think>` grammar — the one owner of what Forge knows about how models
@@ -31,6 +31,29 @@ export function reasoningMiddleware(reasoning: boolean) {
     tagName: THINK_TAG,
     startWithReasoning: reasoning,
   });
+}
+
+/**
+ * Strips chain-of-thought out of a transcript on its way BACK to a model.
+ *
+ * Reasoning is for the reader, not the model — nothing is gained by replaying a
+ * model's own prior thinking at it, and OpenAI-compatible providers reject it
+ * outright: Groq answers 400 `property 'reasoning_content' is unsupported` for
+ * an assistant turn that carries any. One reasoning reply would otherwise poison
+ * every request after it, since the whole transcript is resent each turn.
+ *
+ * BrowserTransport never needed this — toChatTurns keeps only text parts, so it
+ * drops reasoning as a side effect of how it flattens.
+ */
+export function withoutReasoning(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) =>
+    message.role === "assistant"
+      ? {
+          ...message,
+          parts: message.parts.filter((part) => part.type !== "reasoning"),
+        }
+      : message
+  );
 }
 
 const CLOSING_TAG = `</${THINK_TAG}>`;
