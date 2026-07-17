@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BrowserModelRow } from "@/components/models/browser-model-row";
-import { isRunnable, unrunnableReason } from "@/components/chat/task-surface";
+import { isRunnable, unrunnableReason } from "@/lib/task-support";
 import { useModelStore } from "@/hooks/use-model-store";
 import { formatBytes, totalCachedSize } from "@/lib/model-cache";
 import { cn } from "@/lib/utils";

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { ChatInput } from "@/components/chat/chat-input";
-import { isSupportedTask } from "@/components/chat/task-surface";
+import { isSupportedTask } from "@/lib/task-support";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { startConversation } from "@/lib/conversation";

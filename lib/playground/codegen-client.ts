@@ -1,6 +1,3 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText } from "ai";
-
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import type { HfTask } from "@/lib/hf-tasks";
 import { friendlyLocalError } from "@/lib/local-errors";
@@ -74,6 +71,14 @@ async function requestLocal(
     body.request ?? "",
     { previousCode: body.previousCode, instruction: body.instruction }
   );
+
+  // Loaded here, not at module scope: this branch only runs for a LOCAL (Ollama)
+  // codegen provider, and the module is reachable from the playground surface —
+  // no reason to ship the provider SDK to everyone who never takes this path.
+  const [{ createOpenAICompatible }, { generateText }] = await Promise.all([
+    import("@ai-sdk/openai-compatible"),
+    import("ai"),
+  ]);
 
   // A local endpoint (Ollama) ignores auth; a placeholder key satisfies clients
   // that always attach a bearer.

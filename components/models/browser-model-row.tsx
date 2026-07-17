@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Check, DesktopDownload, Trash5 } from "reicon-react";
 
-import { isRunnable, unrunnableReason } from "@/components/chat/task-surface";
+import { isRunnable, unrunnableReason } from "@/lib/task-support";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useModal } from "@/hooks/use-modal-store";
