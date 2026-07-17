@@ -53,7 +53,11 @@ export default function ModelsPage() {
     void totalCachedSize().then(setCacheUsed);
   }, []);
 
-  React.useEffect(refreshCacheUsage, [refreshCacheUsage, results]);
+  // Mount only: the cache changes when a model is downloaded or removed, not
+  // when a search returns — and walking it per keystroke was a full pass over
+  // every cached weight file for a number that hadn't moved. (The "used" figure
+  // refreshes on the next visit to the page after a download/removal.)
+  React.useEffect(refreshCacheUsage, [refreshCacheUsage]);
 
   // ⌘K / Ctrl+K focuses search (⌘B is taken by the sidebar toggle).
   React.useEffect(() => {

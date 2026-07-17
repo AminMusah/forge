@@ -45,14 +45,15 @@ async function openCache(): Promise<Cache | null> {
   }
 }
 
+/**
+ * Cached weight responses always carry content-length from the Hub. If one
+ * somehow doesn't, report 0 (which formatBytes renders as "—") rather than
+ * measuring it: the fallback was `(await response.clone().blob()).size`, which
+ * pulls hundreds of megabytes into memory to count them.
+ */
 async function sizeOf(response: Response): Promise<number> {
   const header = response.headers.get("content-length");
-  if (header) return Number(header);
-  try {
-    return (await response.clone().blob()).size;
-  } catch {
-    return 0;
-  }
+  return header ? Number(header) : 0;
 }
 
 /**
@@ -112,13 +113,11 @@ export async function totalCachedSize(): Promise<number> {
   const cache = await openCache();
   if (!cache) return 0;
 
-  const requests = await cache.keys();
-  const sizes = await Promise.all(
-    requests.map(async (request) => {
-      const hit = await cache.match(request);
-      return hit ? sizeOf(hit) : 0;
-    })
-  );
+  // matchAll() hands back the responses directly; keys() + a match() per key
+  // walked the whole cache twice for the same answer. (enumerateCachedModels
+  // keeps keys() — it needs request.url to derive the model id.)
+  const responses = await cache.matchAll();
+  const sizes = await Promise.all(responses.map(sizeOf));
   return sizes.reduce((total, size) => total + size, 0);
 }
 
@@ -139,17 +138,19 @@ export async function removeCachedModel(modelId: string): Promise<void> {
 export async function remoteSize(
   modelId: string,
   dtype: Dtype = DEFAULT_DTYPE,
-  task: HfTask = "text-generation"
+  task: HfTask = "text-generation",
+  signal?: AbortSignal
 ): Promise<number> {
   try {
     const sizes = await Promise.all(
       weightUrls(modelId, task, dtype).map(async (url) => {
-        const response = await fetch(url, { method: "HEAD" });
+        const response = await fetch(url, { method: "HEAD", signal });
         return Number(response.headers.get("content-length") ?? 0);
       })
     );
     return sizes.reduce((total, size) => total + size, 0);
   } catch {
+    // Includes abort: a row that's gone doesn't need a size.
     return 0;
   }
 }

@@ -48,14 +48,45 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
 
   // Cache Storage is the source of truth — no bookkeeping of ours to drift. The
   // task decides which files to look for: Whisper ships two graphs, not one.
-  const refresh = React.useCallback(async () => {
-    const cached = await cachedSize(model.id, dtype, model.task);
-    setDownloaded(cached > 0);
-    setSize(cached > 0 ? cached : await remoteSize(model.id, dtype, model.task));
-  }, [model.id, dtype, model.task]);
+  // Only the LOCAL read runs eagerly: remoteSize is a cross-origin HEAD per
+  // weight file, and a search replaces all 20 rows at once — 40 requests that
+  // race the next search for the browser's connection budget.
+  const refresh = React.useCallback(
+    async (signal?: AbortSignal) => {
+      const cached = await cachedSize(model.id, dtype, model.task);
+      if (signal?.aborted) return;
+      setDownloaded(cached > 0);
+      if (cached > 0) {
+        setSize(cached);
+        return;
+      }
+      const remote = await remoteSize(model.id, dtype, model.task, signal);
+      if (signal?.aborted) return;
+      setSize(remote);
+    },
+    [model.id, dtype, model.task]
+  );
 
+  const rowRef = React.useRef<HTMLLIElement>(null);
+
+  // Defer the network read until the row is actually on screen, and abort it if
+  // the row leaves (a new search) before its HEADs return.
   React.useEffect(() => {
-    void refresh();
+    const element = rowRef.current;
+    if (!element) return;
+    const controller = new AbortController();
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      void refresh(controller.signal);
+    });
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+      controller.abort();
+    };
   }, [refresh]);
 
   const download = async () => {
@@ -92,7 +123,10 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   };
 
   return (
-    <li className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors duration-150 hover:bg-muted/40">
+    <li
+      ref={rowRef}
+      className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors duration-150 hover:bg-muted/40"
+    >
       <div className="grid min-w-0 flex-1 leading-tight">
         <span className="truncate text-sm font-medium">{model.id}</span>
         <span className="truncate text-xs text-muted-foreground">
