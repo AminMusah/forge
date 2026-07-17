@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { HydrationGate } from "@/components/hydration-gate";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const raleway = Raleway({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -53,20 +54,24 @@ export default function RootLayout({
         >
           <Toaster />
           <HydrationGate />
-          <SidebarProvider>
-            <ModalProvider />
-            <AppSidebar />
-            <div className="h-svh overflow-hidden lg:p-2 pl-0 w-full">
-              <div className="lg:border lg:rounded-lg overflow-hidden flex flex-col items-center justify-start bg-background h-full w-full">
-                <header className="w-full flex items-center gap-2 border-b px-4 h-10 shrink-0">
-                  <SidebarTrigger />
-                </header>
-                <div className="overflow-auto w-full h-[calc(100svh-40px)] lg:h-[calc(100svh-56px)]">
-                  {children}
+          {/* App-wide so the delay group spans every tooltip in the shell —
+              the composer toolbar and the sidebar share one timer. */}
+          <TooltipProvider>
+            <SidebarProvider>
+              <ModalProvider />
+              <AppSidebar />
+              <div className="h-svh overflow-hidden lg:p-2 pl-0 w-full">
+                <div className="lg:border lg:rounded-lg overflow-hidden flex flex-col items-center justify-start bg-background h-full w-full">
+                  <header className="w-full flex items-center gap-2 border-b px-4 h-10 shrink-0">
+                    <SidebarTrigger />
+                  </header>
+                  <div className="overflow-auto w-full h-[calc(100svh-40px)] lg:h-[calc(100svh-56px)]">
+                    {children}
+                  </div>
                 </div>
               </div>
-            </div>
-          </SidebarProvider>
+            </SidebarProvider>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>
