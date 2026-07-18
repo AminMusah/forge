@@ -16,6 +16,7 @@ import {
   CODEGEN_COOKIE,
   parseConnection,
 } from "@/lib/connection";
+import { isHostedDeploy } from "@/lib/connection-policy";
 import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 
@@ -24,7 +25,8 @@ import { hfTasks, type HfTask } from "@/lib/hf-tasks";
  *
  * Resolution: the user's BYO connection wins (their key, unlimited); with none,
  * the free shared key writes the browser's first FREE_CODEGEN_LIMIT playgrounds
- * as a first-run taste (when the operator opted in), then it's BYO. See
+ * as a first-run taste (when the operator opted in), then it's BYO. That cap
+ * applies on a hosted deploy only — see the `metered` comment below. See
  * codegen-provider.ts.
  */
 
@@ -53,12 +55,18 @@ export async function POST(req: Request) {
   const store = await cookies();
   const connection = parseConnection(store.get(CODEGEN_COOKIE)?.value);
 
-  // The user's own key wins outright. With none, offer the free shared key —
-  // but only while this browser is under its free allowance.
+  // Metering exists to bound the OPERATOR's bill against anonymous visitors on a
+  // public deploy. Running the repo locally there are none — it's the
+  // developer's own key, on their own machine, billed to them — so a cap there
+  // is friction that protects nobody. Unmetered locally, capped on a deploy.
+  const metered = isHostedDeploy();
   const used = freeUsed(store.get(FREE_USED_COOKIE)?.value);
+
+  // The user's own key wins outright. With none, offer the free shared key —
+  // on a deploy, only while this browser is under its allowance.
   let codegen = codegenModel({ connection });
   let usingFree = false;
-  if (!codegen && used < FREE_CODEGEN_LIMIT) {
+  if (!codegen && (!metered || used < FREE_CODEGEN_LIMIT)) {
     codegen = freeCodegenModel();
     usingFree = codegen !== null;
   }
@@ -111,8 +119,9 @@ export async function POST(req: Request) {
     }
 
     // Spend a free generation only on success — a failed or aborted attempt
-    // shouldn't burn one of the visitor's few.
-    if (usingFree) {
+    // shouldn't burn one of the visitor's few. Nothing to spend when unmetered:
+    // writing a counter nobody reads would only confuse the next reader.
+    if (usingFree && metered) {
       store.set(FREE_USED_COOKIE, String(used + 1), {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

@@ -25,10 +25,12 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GROQ_CODEGEN_MODEL = "openai/gpt-oss-120b";
 
 /**
- * Free playgrounds per browser. Enough to actually feel the loop — generate,
- * see it run, try another task — rather than a single shot the visitor spends
- * before understanding what they got. Raising this raises the operator's
- * worst-case bill proportionally; the Groq spending cap is what bounds it.
+ * Free playgrounds per browser, ON A HOSTED DEPLOY. Enough to actually feel the
+ * loop — generate, see it run, try another task — rather than a single shot the
+ * visitor spends before understanding what they got. Raising this raises the
+ * operator's worst-case bill proportionally; the Groq spending cap is what
+ * bounds it. Running the repo locally isn't metered at all: the key is the
+ * developer's own, so there's no third party to protect.
  */
 export const FREE_CODEGEN_LIMIT = 3;
 
