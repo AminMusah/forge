@@ -16,6 +16,7 @@ import {
   hasWebGPU,
   removeCachedModel,
   remoteSize,
+  type Dtype,
 } from "@/lib/model-cache";
 import type { Model } from "@/lib/types";
 
@@ -31,7 +32,11 @@ interface BrowserModelRowProps {
  */
 export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
   const { onOpen } = useModal();
-  const dtype = model.dtype ?? DEFAULT_DTYPE;
+  // Which quantization to download/run. Defaults to q4 (safe across GPUs); the
+  // picker lets a user trade size/quality on models that ship other builds. A
+  // different quant is a different cached file, so switching re-evaluates the
+  // download state below.
+  const [dtype, setDtype] = React.useState<Dtype>(model.dtype ?? DEFAULT_DTYPE);
 
   const [size, setSize] = React.useState(0);
   const [downloaded, setDownloaded] = React.useState<boolean | null>(null);
@@ -134,9 +139,31 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
         </span>
       </div>
 
-      <span className="hidden shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground sm:inline">
-        {status ?? (size > 0 ? `${dtype} · ${formatBytes(size)}` : dtype)}
-      </span>
+      {status ? (
+        <span className="hidden shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground sm:inline">
+          {status}
+        </span>
+      ) : (
+        <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
+          {model.dtypes && model.dtypes.length > 1 ? (
+            <select
+              value={dtype}
+              onChange={(e) => setDtype(e.target.value as Dtype)}
+              title="Quantization. q4 is the safe default; smaller/other builds can degrade on some GPUs, and each is a separate download."
+              className="rounded-full border bg-transparent px-2 py-0.5 text-xs text-muted-foreground outline-none focus:border-ring"
+            >
+              {model.dtypes.map((d) => (
+                <option key={d} value={d} className="bg-background text-foreground">
+                  {d}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="rounded-full border px-2 py-0.5">{dtype}</span>
+          )}
+          {size > 0 && <span>{formatBytes(size)}</span>}
+        </span>
+      )}
 
       {/* Visible reason when a button is disabled — a `disabled` button hides its
           own title tooltip, so the reason has to be in the row. */}
@@ -165,7 +192,7 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
             size="sm"
             variant="outline"
             disabled={!runnable}
-            onClick={() => onUse(model)}
+            onClick={() => onUse({ ...model, dtype })}
           >
             <Check className="size-3.5" />
             {openActionLabel(model.task)}

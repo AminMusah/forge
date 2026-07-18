@@ -40,6 +40,8 @@ export interface WorkerCallOptions {
   /** Each streamed token, for a caller that renders as they arrive. Deltas are
    *  accumulated into the resolved `text` either way. */
   onToken?: (delta: string) => void;
+  /** Perf signals (load time, tokens/sec) for a browser generation, once known. */
+  onStats?: (stats: { loadMs: number; tokensPerSecond: number }) => void;
   /** Interrupts the worker's generation loop when aborted. */
   abortSignal?: AbortSignal;
 }
@@ -54,7 +56,7 @@ export interface WorkerCallOptions {
  */
 export function request(
   message: WorkerCall,
-  { onProgress, onToken, abortSignal }: WorkerCallOptions = {}
+  { onProgress, onToken, onStats, abortSignal }: WorkerCallOptions = {}
 ): Promise<{ text: string; data: unknown }> {
   const worker = getWorker();
   const id = crypto.randomUUID();
@@ -75,6 +77,9 @@ export function request(
         case "token":
           text += msg.delta;
           onToken?.(msg.delta);
+          break;
+        case "stats":
+          onStats?.({ loadMs: msg.loadMs, tokensPerSecond: msg.tokensPerSecond });
           break;
         case "done":
           cleanup();

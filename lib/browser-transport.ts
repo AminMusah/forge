@@ -4,6 +4,7 @@ import { useModelLoadStore } from "@/hooks/use-model-load-store";
 import type { HfTask } from "@/lib/hf-tasks";
 import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
 import { request } from "@/lib/worker-client";
+import { useModelPerfStore } from "@/hooks/use-model-perf-store";
 import type { ChatTurn } from "@/lib/browser-model.worker";
 
 const setStatus = (status: string | null) =>
@@ -99,6 +100,8 @@ export class BrowserTransport implements ChatTransport<UIMessage> {
               }
               controller.enqueue({ type: "text-delta", id: answerId, delta });
             },
+            onStats: (stats) =>
+              useModelPerfStore.getState().setStats(modelId, stats),
             abortSignal,
           }
         )

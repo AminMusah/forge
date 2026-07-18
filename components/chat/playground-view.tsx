@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { ArrowsRotate } from "reicon-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { CodeBlock } from "@/components/chat/code-block";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { installPlaygroundBridge } from "@/lib/playground/bridge";
@@ -56,12 +57,15 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [compiling, setCompiling] = React.useState(false);
+  const [showCode, setShowCode] = React.useState(false);
 
   const versions = React.useMemo(
     () => messages.filter((m) => m.role === "assistant"),
     [messages]
   );
   const firstRequest = messages.find((m) => m.role === "user")?.content ?? "";
+  const currentCode = versions.find((v) => v.id === current)?.content ?? "";
 
   // Keep the model chip describing this chat.
   React.useEffect(() => {
@@ -122,7 +126,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
       setBusy(true);
       setError(null);
       try {
-        setStatus("Generating…");
+        setStatus("Generating playground…");
         const fresh = await requestPlayground(body, ctrl.signal);
         const code = await settle(model.task, fresh, ctrl.signal);
         const assistant = message("assistant", code);
@@ -131,6 +135,10 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         );
         setCurrent(assistant.id);
       } catch (e) {
+        // A newer run already owns the UI (StrictMode's dev remount restarts this
+        // effect, so the aborted first run rejects LATE) — don't clobber it with
+        // this superseded run's "Stopped".
+        if (abortRef.current !== ctrl) return;
         // Stop leaves the previous version intact — not an error.
         if (ctrl.signal.aborted) setStatus("Stopped");
         else {
@@ -138,8 +146,12 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           setStatus(null);
         }
       } finally {
-        setBusy(false);
-        abortRef.current = null;
+        // Only the current run resets the shared UI state; a superseded one
+        // must not flip busy off or null the live controller.
+        if (abortRef.current === ctrl) {
+          setBusy(false);
+          abortRef.current = null;
+        }
       }
     },
     [model, settle, appendTurns]
@@ -179,6 +191,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
     }
 
     let cancelled = false;
+    setCompiling(true);
     setStatus("Compiling…");
     void compilePlayground(version.content)
       .then((js) => {
@@ -192,6 +205,9 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : String(e));
         setStatus(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCompiling(false);
       });
     return () => {
       cancelled = true;
@@ -262,6 +278,15 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
                   v{i + 1}
                 </button>
               ))}
+            {/* View the generated TSX itself — copy it, hand it to someone, or
+                just see what the model wrote when a playground misbehaves. */}
+            <button
+              onClick={() => setShowCode((s) => !s)}
+              disabled={!currentCode}
+              className="ml-auto rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
+            >
+              {showCode ? "Preview" : "Code"}
+            </button>
             {/* Regenerate re-runs the ORIGINAL prompt for a fresh version — no
                 new input, so it lives here by the versions, not in the composer. */}
             <button
@@ -269,26 +294,26 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
               disabled={busy || !firstRequest}
               title="Regenerate from the original prompt"
               aria-label="Regenerate"
-              className="ml-auto inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
             >
               <ArrowsRotate className="size-3.5" />
             </button>
           </div>
         )}
 
-        {(status || error) && (
-          <p
-            className={cn(
-              "text-sm",
-              error ? "text-destructive" : "text-muted-foreground"
-            )}
-          >
-            {error ?? status}
-          </p>
-        )}
+        {/* Errors always show; live status shows here only when a playground is
+            already on screen (e.g. regenerating) — otherwise the box below owns
+            the "working…" message, so they don't say two different things. */}
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : status && srcdoc ? (
+          <p className="text-sm text-muted-foreground">{status}</p>
+        ) : null}
 
-        <div className="min-h-0 flex-1">
-          {srcdoc ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {showCode && currentCode ? (
+            <CodeBlock code={currentCode} language="tsx" />
+          ) : srcdoc ? (
             <iframe
               ref={iframeRef}
               srcDoc={srcdoc}
@@ -297,10 +322,23 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
               title="Generated playground"
             />
           ) : (
-            <div className="flex h-full items-center justify-center rounded-lg border border-dashed">
-              <p className="text-sm text-muted-foreground">
-                {busy ? status ?? "Generating…" : "No playground yet."}
-              </p>
+            <div className="flex h-full items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground">
+              {/* Spinner ONLY while actually working — generating, compiling, or a
+                  stored version not yet rendered. A terminal status ("Stopped") or
+                  an error must NOT spin, and a version compiling on load is not
+                  "no playground" (that copy read as broken). */}
+              {(busy || compiling || versions.length > 0) && !error ? (
+                <>
+                  <Spinner className="size-4" />
+                  <span>{status ?? "Loading playground…"}</span>
+                </>
+              ) : error ? (
+                <span>Couldn&apos;t render this playground — see the error above.</span>
+              ) : status ? (
+                <span>{status}</span>
+              ) : (
+                <span>No playground yet.</span>
+              )}
             </div>
           )}
         </div>

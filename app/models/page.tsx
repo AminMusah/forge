@@ -132,7 +132,7 @@ export default function ModelsPage() {
         </div>
         {cacheUsed > 0 && (
           <p className="shrink-0 text-xs text-muted-foreground">
-            Local models using {formatBytes(cacheUsed)}
+            {formatBytes(cacheUsed)} of models downloaded to this browser
           </p>
         )}
       </div>

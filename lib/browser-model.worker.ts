@@ -94,6 +94,9 @@ export interface RunInput {
 export type WorkerResponse =
   | { type: "progress"; id: string; text: string }
   | { type: "token"; id: string; delta: string }
+  // Perf signals for a browser generation: how long the (cold) load took and how
+  // fast it generated. Posted just before `done`. loadMs ~0 when already warm.
+  | { type: "stats"; id: string; loadMs: number; tokensPerSecond: number }
   | { type: "done"; id: string }
   // The whole result at once — a pipeline task's native JSON output. Distinct
   // from `token` (streamed text): a detection result is boxes, not a stream.
@@ -363,16 +366,27 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
   running = { id, stopper };
 
   try {
+    const loadStart = performance.now();
     const loaded = await load(modelId, dtype, "text-generation", id);
+    const loadMs = performance.now() - loadStart;
     if (loaded.kind !== "text-generation") throw new Error("Wrong model loaded.");
     const model = loaded.pipe;
+
+    // Time generation from the FIRST token (excluding load) so tokens/sec is the
+    // steady-state rate, not diluted by the cold-start compile.
+    let genStart = 0;
+    let tokens = 0;
 
     // The pipeline applies the tokenizer's own chat template to this.
     const streamer = new TextStreamer(model.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,
       callback_function: (delta: string) => {
-        if (delta) post({ type: "token", id, delta });
+        if (delta) {
+          if (genStart === 0) genStart = performance.now();
+          tokens++;
+          post({ type: "token", id, delta });
+        }
       },
     });
 
@@ -391,6 +405,13 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
       stopping_criteria: stopper,
     });
 
+    const genMs = genStart > 0 ? performance.now() - genStart : 0;
+    post({
+      type: "stats",
+      id,
+      loadMs,
+      tokensPerSecond: genMs > 0 ? (tokens / genMs) * 1000 : 0,
+    });
     post({ type: "done", id });
   } finally {
     running = null;

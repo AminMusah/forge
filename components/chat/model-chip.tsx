@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useChatProviderStore } from "@/hooks/use-chat-provider-store";
 import { useChatModels, useModelStore } from "@/hooks/use-model-store";
+import { useModelPerfStore } from "@/hooks/use-model-perf-store";
 import { rebindConversation } from "@/lib/conversation";
 import type { HfTask } from "@/lib/hf-tasks";
 import { selectTransport } from "@/lib/transport-kind";
@@ -62,6 +63,8 @@ export function ModelChip({ task }: ModelChipProps) {
   const pathname = usePathname();
   const selectedModel = useModelStore((state) => state.selectedModel);
   const setModel = useModelStore((state) => state.setModel);
+  // Live perf for the active browser model, if it's generated at least once.
+  const stats = useModelPerfStore((state) => state.stats[selectedModel.id]);
 
   // Includes the BYO-chat model (when a chat connection is set) alongside the
   // catalog, filtered to the open chat's task.
@@ -97,6 +100,12 @@ export function ModelChip({ task }: ModelChipProps) {
       >
         <Sparkles className="size-3.5" />
         <span className="max-w-44 truncate">{selectedModel.name}</span>
+        {stats && (
+          <span className="hidden shrink-0 text-muted-foreground sm:inline">
+            {stats.loadMs > 0 && `${(stats.loadMs / 1000).toFixed(1)}s · `}
+            {Math.round(stats.tokensPerSecond)} tok/s
+          </span>
+        )}
         <ChevronExpandY className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-72">
