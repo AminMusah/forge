@@ -115,6 +115,26 @@ export function isLocalBaseURL(baseURL: string): boolean {
 }
 
 /**
+ * Whether a localhost provider is worth offering AT ALL — true only when Forge
+ * itself is served from loopback.
+ *
+ * The test is the PAGE's origin, not NODE_ENV, because the page origin is what
+ * actually decides whether the browser may reach loopback. A hosted page is
+ * blocked twice over: Chrome's Private Network Access refuses public→private
+ * requests unless the local server opts in (Ollama doesn't), and an https page
+ * can't call http anyway. But `next build && next start` on your own machine is
+ * NODE_ENV=production and works fine — so gating on NODE_ENV would hide a
+ * provider that genuinely works.
+ *
+ * Browser-only by nature; false during SSR, so callers must resolve it after
+ * mount or the server and client renders will disagree.
+ */
+export function localProvidersAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  return isLocalBaseURL(window.location.origin);
+}
+
+/**
  * List the models an OpenAI-compatible endpoint has, from the browser. Used to
  * populate the model picker for LOCAL (Ollama) endpoints — the server can't
  * reach the user's localhost, but the browser can, and CORS is open there.

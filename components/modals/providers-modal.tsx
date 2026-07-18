@@ -22,6 +22,7 @@ import {
   PROVIDER_PRESETS,
   isLocalBaseURL,
   listLocalModels,
+  localProvidersAvailable,
 } from "@/lib/connection";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,13 @@ export function ProvidersModal() {
 
   const chat = useChatProviderStore();
   const codegen = useCodegenProviderStore();
+
+  // Resolved after mount, not during render: localProvidersAvailable() reads
+  // window, so an SSR'd `false` and a client `true` would be a hydration
+  // mismatch. Starting false also fails safe — we hide a working provider for a
+  // frame rather than advertising a broken one.
+  const [allowLocal, setAllowLocal] = React.useState(false);
+  React.useEffect(() => setAllowLocal(localProvidersAvailable()), []);
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
@@ -59,7 +67,15 @@ export function ProvidersModal() {
           <ConnectionSection
             title="Chat provider"
             purpose="for chat · optional"
-            blurb="Chat against your own OpenAI-compatible model — a local Ollama, or a proprietary model as a baseline. Or just pick a Hugging Face model above."
+            // Signpost rather than silence: a hosted visitor can't use Ollama,
+            // but telling them it works locally is how a local-first user learns
+            // running Forge themselves is worth doing.
+            blurb={
+              allowLocal
+                ? "Chat against your own OpenAI-compatible model — a local Ollama, or a proprietary model as a baseline. Or just pick a Hugging Face model above."
+                : "Chat against your own OpenAI-compatible model, or just pick a Hugging Face model above. Local providers like Ollama only work when you run Forge on your own machine."
+            }
+            allowLocal={allowLocal}
             hasProvider={chat.hasProvider}
             storedBaseURL={chat.baseURL}
             storedModelId={chat.modelId}
@@ -71,6 +87,7 @@ export function ProvidersModal() {
             title="Codegen provider"
             purpose="for playgrounds · optional"
             blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Your first few playgrounds are on us — bring a key to keep building."
+            allowLocal={allowLocal}
             hasProvider={codegen.hasProvider}
             storedBaseURL={codegen.baseURL}
             storedModelId={codegen.modelId}
@@ -168,6 +185,8 @@ interface ConnectionSectionProps {
   title: string;
   purpose: string;
   blurb: string;
+  /** False on a hosted deploy, where a localhost endpoint is unreachable. */
+  allowLocal: boolean;
   hasProvider: boolean | null;
   storedBaseURL: string | null;
   storedModelId: string | null;
@@ -184,6 +203,7 @@ function ConnectionSection({
   title,
   purpose,
   blurb,
+  allowLocal,
   hasProvider,
   storedBaseURL,
   storedModelId,
@@ -197,14 +217,24 @@ function ConnectionSection({
   const [localModels, setLocalModels] = React.useState<string[]>([]);
   const listId = React.useId();
 
+  // Don't offer what can't work: a localhost preset on a hosted page is a trap
+  // that ends in a CORS/Private-Network failure the user can't fix.
+  const presets = React.useMemo(
+    () =>
+      allowLocal
+        ? PROVIDER_PRESETS
+        : PROVIDER_PRESETS.filter((p) => !isLocalBaseURL(p.baseURL)),
+    [allowLocal]
+  );
+
   // Prefill from what's stored, else the first (Groq) preset.
   React.useEffect(() => {
-    const preset = PROVIDER_PRESETS[0];
+    const preset = presets[0];
     setBaseURL(storedBaseURL ?? preset.baseURL);
     setModelId(storedModelId ?? preset.defaultModelId);
-  }, [storedBaseURL, storedModelId]);
+  }, [storedBaseURL, storedModelId, presets]);
 
-  const activePreset = PROVIDER_PRESETS.find((p) => p.baseURL === baseURL);
+  const activePreset = presets.find((p) => p.baseURL === baseURL);
   // A local endpoint (Ollama) needs no key — don't require one to save.
   const local = isLocalBaseURL(baseURL);
 
@@ -213,7 +243,7 @@ function ConnectionSection({
   // model so the blind preset default can't cause a "model not found" on first
   // use. Debounced against base-URL typing; auth isn't needed for Ollama.
   React.useEffect(() => {
-    if (!local || !baseURL) {
+    if (!allowLocal || !local || !baseURL) {
       setLocalModels([]);
       return;
     }
@@ -232,14 +262,14 @@ function ConnectionSection({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [local, baseURL]);
+  }, [allowLocal, local, baseURL]);
   const canSave =
     Boolean(baseURL.trim()) &&
     Boolean(modelId.trim()) &&
     (local || Boolean(apiKey.trim()));
 
   const applyPreset = (value: string) => {
-    const preset = PROVIDER_PRESETS.find((p) => p.baseURL === value);
+    const preset = presets.find((p) => p.baseURL === value);
     if (!preset) return;
     setBaseURL(preset.baseURL);
     setModelId(preset.defaultModelId);
@@ -289,7 +319,7 @@ function ConnectionSection({
           )}
         >
           {!activePreset && <option value="">Custom</option>}
-          {PROVIDER_PRESETS.map((p) => (
+          {presets.map((p) => (
             <option key={p.baseURL} value={p.baseURL}>
               {p.label}
             </option>
