@@ -8,6 +8,7 @@ import {
   extractCode,
 } from "@/lib/playground/codegen-prompt";
 import {
+  FREE_CODEGEN_LIMIT,
   codegenModel,
   freeCodegenModel,
 } from "@/lib/playground/codegen-provider";
@@ -22,12 +23,23 @@ import { hfTasks, type HfTask } from "@/lib/hf-tasks";
  * Generates a playground UI for a task, from its descriptor.
  *
  * Resolution: the user's BYO connection wins (their key, unlimited); with none,
- * the free shared key writes ONE playground per browser as a first-run taste
- * (when the operator opted in), then it's BYO. See codegen-provider.ts.
+ * the free shared key writes the browser's first FREE_CODEGEN_LIMIT playgrounds
+ * as a first-run taste (when the operator opted in), then it's BYO. See
+ * codegen-provider.ts.
  */
 
-/** Marks a browser's one free generation as spent. httpOnly so JS can't clear it. */
+/**
+ * How many free generations this browser has spent. httpOnly so page JS can't
+ * clear it. It reads as a count, which is also why the old boolean "1" written
+ * by the one-shot version still means exactly "one spent" — no migration needed.
+ */
 const FREE_USED_COOKIE = "codegen_free_used";
+
+/** Spent count from the cookie; anything malformed counts as none spent. */
+function freeUsed(value: string | undefined): number {
+  const used = Number(value);
+  return Number.isInteger(used) && used > 0 ? used : 0;
+}
 
 const bodySchema = z.object({
   task: z.enum(hfTasks as unknown as [string, ...string[]]),
@@ -42,15 +54,16 @@ export async function POST(req: Request) {
   const connection = parseConnection(store.get(CODEGEN_COOKIE)?.value);
 
   // The user's own key wins outright. With none, offer the free shared key —
-  // but only if this browser hasn't spent its one free generation yet.
+  // but only while this browser is under its free allowance.
+  const used = freeUsed(store.get(FREE_USED_COOKIE)?.value);
   let codegen = codegenModel({ connection });
   let usingFree = false;
-  if (!codegen && store.get(FREE_USED_COOKIE)?.value !== "1") {
+  if (!codegen && used < FREE_CODEGEN_LIMIT) {
     codegen = freeCodegenModel();
     usingFree = codegen !== null;
   }
   if (!codegen) {
-    // Free generation spent (or never offered) and no BYO connection.
+    // Free allowance spent (or never offered) and no BYO connection.
     return Response.json(
       { error: "Add your own codegen provider to keep building playgrounds." },
       { status: 402 }
@@ -97,10 +110,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Spend the free generation only on success — a failed or aborted attempt
-    // shouldn't burn the visitor's one taste.
+    // Spend a free generation only on success — a failed or aborted attempt
+    // shouldn't burn one of the visitor's few.
     if (usingFree) {
-      store.set(FREE_USED_COOKIE, "1", {
+      store.set(FREE_USED_COOKIE, String(used + 1), {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",

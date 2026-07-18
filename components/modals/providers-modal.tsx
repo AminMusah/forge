@@ -70,7 +70,7 @@ export function ProvidersModal() {
           <ConnectionSection
             title="Codegen provider"
             purpose="for playgrounds · optional"
-            blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Your first playground is on us — bring a key to keep building."
+            blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Your first few playgrounds are on us — bring a key to keep building."
             hasProvider={codegen.hasProvider}
             storedBaseURL={codegen.baseURL}
             storedModelId={codegen.modelId}

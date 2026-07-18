@@ -8,19 +8,29 @@ import type { Connection } from "@/lib/connection";
  *
  * Resolution (encoded across here and app/api/codegen/route.ts):
  *   1. the user's BYO connection — their key, their quota. Unlimited.
- *   2. the free shared key — Groq, but ONLY once per visitor, and only when the
- *      operator opts in (FORGE_FREE_CODEGEN=1 + GROQ_API_KEY). The first-run taste.
+ *   2. the free shared key — Groq, but only for a visitor's first
+ *      FREE_CODEGEN_LIMIT generations, and only when the operator opts in
+ *      (FORGE_FREE_CODEGEN=1 + GROQ_API_KEY). The first-run taste.
  *   3. null — nothing available; the route answers 402 "add your own key".
  *
- * The shared key is deliberately gated AND one-shot: /api/codegen has no auth, so
+ * The shared key is deliberately gated AND capped: /api/codegen has no auth, so
  * an ungated shared key is an unmetered LLM proxy on the operator's bill. The
- * one-generation-per-browser cookie (see the route) plus a spending cap on the
- * Groq account is what bounds the cost. Every provider is reached through ONE
- * OpenAI-compatible seam — a provider is just a base URL.
+ * per-browser counter cookie (see the route) is only a speed bump for honest
+ * visitors — a spending cap on the Groq account is the real ceiling. Every
+ * provider is reached through ONE OpenAI-compatible seam — a provider is just a
+ * base URL.
  */
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GROQ_CODEGEN_MODEL = "openai/gpt-oss-120b";
+
+/**
+ * Free playgrounds per browser. Enough to actually feel the loop — generate,
+ * see it run, try another task — rather than a single shot the visitor spends
+ * before understanding what they got. Raising this raises the operator's
+ * worst-case bill proportionally; the Groq spending cap is what bounds it.
+ */
+export const FREE_CODEGEN_LIMIT = 3;
 
 export interface CodegenModel {
   model: LanguageModel;
@@ -54,7 +64,7 @@ export function codegenModel(
 /**
  * The free shared coder, or null. Gated behind the operator's explicit opt-in, so
  * a cloned Forge that doesn't set the operator's key stays strictly BYO. The
- * route calls this only when the visitor's one free generation isn't yet spent.
+ * route calls this only while the visitor is under FREE_CODEGEN_LIMIT.
  */
 export function freeCodegenModel(): CodegenModel | null {
   const key = process.env.GROQ_API_KEY;
