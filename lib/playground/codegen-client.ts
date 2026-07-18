@@ -19,6 +19,22 @@ import { descriptorFor } from "@/lib/playground/descriptors";
  * and where the key may live.
  */
 
+/**
+ * A codegen failure that remembers its HTTP status, so the UI can tell a DEAD
+ * END from a hiccup. 402 means the free allowance is gone and no amount of
+ * retrying will change that until a key arrives; a 502 or a 429 is worth trying
+ * again, and often works on the second attempt — codegen isn't deterministic.
+ */
+export class CodegenError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "CodegenError";
+  }
+}
+
 export interface CodegenRequest {
   task: string;
   /** Fresh generation: what to build. */
@@ -50,25 +66,50 @@ async function requestServer(
     body: JSON.stringify(body),
     signal,
   });
-  // Not every rejection comes from our route. An edge rate limit or WAF rule
-  // answers before the function runs, with an HTML page rather than our JSON —
-  // parsing that first turned a "slow down" into a SyntaxError about an
-  // unexpected "<". Read the body defensively and let status carry the meaning.
-  const data = (await res.json().catch(() => null)) as {
-    error?: string;
-    code?: string;
-  } | null;
+  // Not every rejection comes from our route: an edge rate-limit rule answers
+  // before the function runs. Read the body defensively — it may be absent, or
+  // JSON in a shape we didn't write.
+  const data = (await res.json().catch(() => null)) as unknown;
 
   if (!res.ok) {
-    if (data?.error) throw new Error(data.error);
-    throw new Error(
+    // Our route always answers { error: "<string>" } and its messages already
+    // say what to do next, so they win. An OBJECT under `error` came from
+    // somewhere else — an edge rate-limit rule answers { error: { message:
+    // "Forbidden" } }, which names no next step — so speak for it instead.
+    const own = typeof (data as { error?: unknown } | null)?.error === "string"
+      ? ((data as { error: string }).error || null)
+      : null;
+    if (own) throw new CodegenError(own, res.status);
+
+    throw new CodegenError(
       res.status === 429 || res.status === 403
         ? "Too many requests just now. Wait a minute and try again."
-        : `Codegen failed (HTTP ${res.status}).`
+        : errorText(data) ?? `Codegen failed (HTTP ${res.status}).`,
+      res.status
     );
   }
-  if (!data?.code) throw new Error("Codegen returned no code.");
-  return data.code;
+
+  const code = (data as { code?: unknown } | null)?.code;
+  if (typeof code !== "string" || !code) {
+    throw new Error("Codegen returned no code.");
+  }
+  return code;
+}
+
+/**
+ * Pull a readable message out of an error body. Ours is `{ error: string }`;
+ * an edge or proxy may send `{ error: { message, code, id } }` instead — passing
+ * that object straight to Error() is what renders "[object Object]" at the user.
+ */
+function errorText(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const error = (data as { error?: unknown }).error;
+  if (typeof error === "string") return error || null;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message || null;
+  }
+  return null;
 }
 
 /** Generate against a local endpoint directly from the browser (no server hop). */

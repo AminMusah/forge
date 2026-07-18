@@ -9,7 +9,9 @@ import { CodeBlock } from "@/components/chat/code-block";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
 import { installPlaygroundBridge } from "@/lib/playground/bridge";
-import { requestPlayground } from "@/lib/playground/codegen-client";
+import { CodegenError, requestPlayground } from "@/lib/playground/codegen-client";
+import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
+import { useModal } from "@/hooks/use-modal-store";
 import { compilePlayground } from "@/lib/playground/compile";
 import { buildPlaygroundSrcdoc } from "@/lib/playground/iframe";
 import { DEFAULT_DTYPE } from "@/lib/model-cache";
@@ -59,6 +61,14 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const [busy, setBusy] = React.useState(false);
   const [compiling, setCompiling] = React.useState(false);
   const [showCode, setShowCode] = React.useState(false);
+  /** The free allowance ran out (402). Retrying can't fix it; a key can. */
+  const [exhausted, setExhausted] = React.useState(false);
+
+  const { onOpen } = useModal();
+  const hasCodegenProvider = useCodegenProviderStore((s) => s.hasProvider);
+  // Self-healing: saving a connection flips hasProvider, which lifts the block
+  // without needing a failed run to teach the UI it's allowed again.
+  const blocked = exhausted && !hasCodegenProvider;
 
   const versions = React.useMemo(
     () => messages.filter((m) => m.role === "assistant"),
@@ -134,6 +144,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           userTurn ? [message("user", userTurn), assistant] : [assistant]
         );
         setCurrent(assistant.id);
+        setExhausted(false);
       } catch (e) {
         // A newer run already owns the UI (StrictMode's dev remount restarts this
         // effect, so the aborted first run rejects LATE) — don't clobber it with
@@ -142,6 +153,9 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         // Stop leaves the previous version intact — not an error.
         if (ctrl.signal.aborted) setStatus("Stopped");
         else {
+          // 402 is the one failure retrying can never clear — record it so the
+          // controls can offer the fix instead of a button doomed to repeat.
+          if (e instanceof CodegenError && e.status === 402) setExhausted(true);
           setError(e instanceof Error ? e.message : String(e));
           setStatus(null);
         }
@@ -291,7 +305,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
                 new input, so it lives here by the versions, not in the composer. */}
             <button
               onClick={regenerate}
-              disabled={busy || !firstRequest}
+              disabled={busy || !firstRequest || blocked}
               title="Regenerate from the original prompt"
               aria-label="Regenerate"
               className="inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
@@ -304,7 +318,20 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         {/* Errors always show; live status shows here only when a playground is
             already on screen (e.g. regenerating) — otherwise the box below owns
             the "working…" message, so they don't say two different things. */}
-        {error ? (
+        {blocked ? (
+          // A dead end deserves the way out, not a reason. Stated next to the
+          // disabled controls rather than in a title tooltip: a disabled button
+          // swallows its own tooltip, so the explanation has to be visible.
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3">
+            <p className="text-sm text-muted-foreground">
+              You&apos;ve used your free playgrounds. Bring your own key to keep
+              building — it&apos;s unlimited.
+            </p>
+            <Button size="sm" className="ml-auto" onClick={() => onOpen("providers")}>
+              Add a codegen provider
+            </Button>
+          </div>
+        ) : error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : status && srcdoc ? (
           <p className="text-sm text-muted-foreground">{status}</p>
@@ -350,8 +377,12 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && modify()}
-            disabled={busy}
-            placeholder="Change the playground — e.g. make the boxes red, show a count…"
+            disabled={busy || blocked}
+            placeholder={
+              blocked
+                ? "Add a codegen provider to keep editing"
+                : "Change the playground — e.g. make the boxes red, show a count…"
+            }
             className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
           />
           {busy ? (
@@ -359,7 +390,11 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
               Stop
             </Button>
           ) : (
-            <Button size="sm" onClick={modify} disabled={!instruction.trim()}>
+            <Button
+              size="sm"
+              onClick={modify}
+              disabled={!instruction.trim() || blocked}
+            >
               Modify
             </Button>
           )}
