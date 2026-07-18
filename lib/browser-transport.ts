@@ -44,7 +44,13 @@ export async function transcribeSamples(
 ): Promise<string> {
   const { text } = await request(
     { type: "transcribe", modelId, dtype, audio },
-    { onProgress }
+    {
+      onProgress,
+      // Recorded here rather than at the call sites, so playground ASR and
+      // dictation both report without either having to remember to.
+      onStats: (stats) =>
+        useModelPerfStore.getState().setStats(modelId, stats),
+    }
   );
   return text;
 }

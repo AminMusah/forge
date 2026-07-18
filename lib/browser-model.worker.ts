@@ -94,9 +94,19 @@ export interface RunInput {
 export type WorkerResponse =
   | { type: "progress"; id: string; text: string }
   | { type: "token"; id: string; delta: string }
-  // Perf signals for a browser generation: how long the (cold) load took and how
-  // fast it generated. Posted just before `done`. loadMs ~0 when already warm.
-  | { type: "stats"; id: string; loadMs: number; tokensPerSecond: number }
+  // Perf signals for a browser run, posted just before the terminal message.
+  // loadMs is universal (~0 when already warm); the second number depends on the
+  // task, because a classifier emits no tokens and a chat model has no single
+  // "run" — whichever doesn't apply is 0.
+  | {
+      type: "stats";
+      id: string;
+      loadMs: number;
+      /** Generation rate. 0 for a pipeline run. */
+      tokensPerSecond: number;
+      /** Wall time of one pipeline call. 0 for streamed generation. */
+      inferenceMs: number;
+    }
   | { type: "done"; id: string }
   // The whole result at once — a pipeline task's native JSON output. Distinct
   // from `token` (streamed text): a detection result is boxes, not a stream.
@@ -277,7 +287,9 @@ function cleanTranscript(text: string): string {
 
 async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }>) {
   const { id, modelId, dtype, audio } = request;
+  const loadStart = performance.now();
   const loaded = await load(modelId, dtype, "automatic-speech-recognition", id);
+  const loadMs = performance.now() - loadStart;
   if (loaded.kind !== "automatic-speech-recognition") {
     throw new Error("Wrong model loaded.");
   }
@@ -285,6 +297,7 @@ async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }
 
   post({ type: "progress", id, text: "Transcribing…" });
 
+  const inferStart = performance.now();
   const output = await model(audio, {
     // Transcribe, never translate: the transcript has to come back in the
     // language it was spoken in. Left alone, Whisper will render French as
@@ -295,6 +308,9 @@ async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }
     chunk_length_s: 30,
     stride_length_s: 5,
   });
+
+  const inferenceMs = performance.now() - inferStart;
+  post({ type: "stats", id, loadMs, tokensPerSecond: 0, inferenceMs });
 
   const text = Array.isArray(output)
     ? output.map((chunk) => chunk.text).join(" ")
@@ -317,7 +333,9 @@ async function transcribe(request: Extract<WorkerRequest, { type: "transcribe" }
  */
 async function run(request: Extract<WorkerRequest, { type: "run" }>) {
   const { id, modelId, dtype, task, input } = request;
+  const loadStart = performance.now();
   const loaded = await load(modelId, dtype, task, id);
+  const loadMs = performance.now() - loadStart;
   if (loaded.kind !== "pipeline") throw new Error("Wrong model loaded.");
 
   post({ type: "progress", id, text: "Running…" });
@@ -345,7 +363,14 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
     args = [primary ?? ""];
   }
 
+  // Time the inference ONLY — image decoding and argument shuffling above are
+  // input prep, and folding them in would flatter or blame the model for work it
+  // didn't do.
+  const inferStart = performance.now();
   const data = await loaded.pipe(...args, input.options ?? {});
+  const inferenceMs = performance.now() - inferStart;
+
+  post({ type: "stats", id, loadMs, tokensPerSecond: 0, inferenceMs });
   post({ type: "result", id, data });
 }
 
@@ -411,6 +436,9 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
       id,
       loadMs,
       tokensPerSecond: genMs > 0 ? (tokens / genMs) * 1000 : 0,
+      // Streamed generation has no single "run" to time — the rate above is the
+      // meaningful figure.
+      inferenceMs: 0,
     });
     post({ type: "done", id });
   } finally {

@@ -10,7 +10,10 @@ import { create } from "zustand";
 export interface ModelStats {
   /** Cold-load/compile time in ms (0 when the model was already warm). */
   loadMs: number;
+  /** Generation rate. 0 for pipeline tasks, which emit no tokens. */
   tokensPerSecond: number;
+  /** Wall time of the last pipeline run. 0 for streamed generation. */
+  inferenceMs: number;
 }
 
 interface ModelPerfStore {
@@ -25,10 +28,18 @@ export const useModelPerfStore = create<ModelPerfStore>((set) => ({
       stats: {
         ...state.stats,
         [modelId]: {
-          tokensPerSecond: next.tokensPerSecond,
-          // Keep the cold-load time visible once measured: warm replies report
-          // ~0, and blanking it every time would hide a number worth seeing.
+          // Zero means "not applicable to this run", never "it was instant" — so
+          // a reported 0 keeps whatever was last measured rather than erasing it.
+          // That's what keeps the cold-load time on screen once a model is warm.
           loadMs: next.loadMs > 0 ? next.loadMs : state.stats[modelId]?.loadMs ?? 0,
+          tokensPerSecond:
+            next.tokensPerSecond > 0
+              ? next.tokensPerSecond
+              : state.stats[modelId]?.tokensPerSecond ?? 0,
+          inferenceMs:
+            next.inferenceMs > 0
+              ? next.inferenceMs
+              : state.stats[modelId]?.inferenceMs ?? 0,
         },
       },
     })),

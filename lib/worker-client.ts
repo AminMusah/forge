@@ -40,8 +40,13 @@ export interface WorkerCallOptions {
   /** Each streamed token, for a caller that renders as they arrive. Deltas are
    *  accumulated into the resolved `text` either way. */
   onToken?: (delta: string) => void;
-  /** Perf signals (load time, tokens/sec) for a browser generation, once known. */
-  onStats?: (stats: { loadMs: number; tokensPerSecond: number }) => void;
+  /** Perf signals for a browser run, once known. Which figures are meaningful
+   *  depends on the task — see the worker's `stats` message. */
+  onStats?: (stats: {
+    loadMs: number;
+    tokensPerSecond: number;
+    inferenceMs: number;
+  }) => void;
   /** Interrupts the worker's generation loop when aborted. */
   abortSignal?: AbortSignal;
 }
@@ -79,7 +84,11 @@ export function request(
           onToken?.(msg.delta);
           break;
         case "stats":
-          onStats?.({ loadMs: msg.loadMs, tokensPerSecond: msg.tokensPerSecond });
+          onStats?.({
+            loadMs: msg.loadMs,
+            tokensPerSecond: msg.tokensPerSecond,
+            inferenceMs: msg.inferenceMs,
+          });
           break;
         case "done":
           cleanup();

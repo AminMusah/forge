@@ -12,6 +12,7 @@ import { installPlaygroundBridge } from "@/lib/playground/bridge";
 import { CodegenError, requestPlayground } from "@/lib/playground/codegen-client";
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useModal } from "@/hooks/use-modal-store";
+import { useModelPerfStore } from "@/hooks/use-model-perf-store";
 import { compilePlayground } from "@/lib/playground/compile";
 import { buildPlaygroundSrcdoc } from "@/lib/playground/iframe";
 import { DEFAULT_DTYPE } from "@/lib/model-cache";
@@ -65,6 +66,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const [exhausted, setExhausted] = React.useState(false);
 
   const { onOpen } = useModal();
+  const perf = useModelPerfStore((s) => (model ? s.stats[model.id] : undefined));
   const hasCodegenProvider = useCodegenProviderStore((s) => s.hasProvider);
   // Self-healing: saving a connection flips hasProvider, which lifts the block
   // without needing a failed run to teach the UI it's allowed again.
@@ -292,12 +294,25 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
                   v{i + 1}
                 </button>
               ))}
+            {/* What the model costs on THIS machine. Only appears once it has
+                actually run — the playground's own UI decides when that is. */}
+            {perf && (perf.loadMs > 0 || perf.inferenceMs > 0) && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                {perf.loadMs > 0 && `loaded ${(perf.loadMs / 1000).toFixed(1)}s`}
+                {perf.loadMs > 0 && perf.inferenceMs > 0 && " · "}
+                {perf.inferenceMs > 0 && `last run ${Math.round(perf.inferenceMs)}ms`}
+              </span>
+            )}
             {/* View the generated TSX itself — copy it, hand it to someone, or
                 just see what the model wrote when a playground misbehaves. */}
             <button
               onClick={() => setShowCode((s) => !s)}
               disabled={!currentCode}
-              className="ml-auto rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40",
+                // Only claim the spacer when the perf readout hasn't.
+                !(perf && (perf.loadMs > 0 || perf.inferenceMs > 0)) && "ml-auto"
+              )}
             >
               {showCode ? "Preview" : "Code"}
             </button>

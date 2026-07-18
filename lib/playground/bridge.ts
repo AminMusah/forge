@@ -2,6 +2,7 @@ import { decodeToMono16k } from "@/lib/audio";
 import { transcribeSamples } from "@/lib/browser-transport";
 import type { HfTask } from "@/lib/hf-tasks";
 import type { Dtype } from "@/lib/model-cache";
+import { useModelPerfStore } from "@/hooks/use-model-perf-store";
 import { request } from "@/lib/worker-client";
 import type { RunInput } from "@/lib/browser-model.worker";
 
@@ -68,7 +69,13 @@ async function runViaWorker(
       dtype: model.dtype,
       input,
     },
-    { onProgress }
+    {
+      onProgress,
+      // The playground's own UI decides when the model runs, so these land per
+      // action rather than per stream — "last run", not a live rate.
+      onStats: (stats) =>
+        useModelPerfStore.getState().setStats(model.modelId, stats),
+    }
   );
   return data;
 }
