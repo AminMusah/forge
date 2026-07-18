@@ -25,6 +25,7 @@
     "@huggingface/transformers": "^4.2.0",
     "@pierre/diffs": "^1.2.12",
     "@shadcn/react": "^0.2.1",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -9,6 +9,7 @@ import { HydrationGate } from "@/components/hydration-gate";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Analytics } from "@vercel/analytics/next";
 
 const raleway = Raleway({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -73,6 +74,7 @@ export default function RootLayout({
             </SidebarProvider>
           </TooltipProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
