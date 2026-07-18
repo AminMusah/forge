@@ -17,6 +17,9 @@ import {
 import { releaseModel } from "@/lib/worker-client";
 import { isLocalBaseURL } from "@/lib/connection";
 import { listOllamaModels, removeOllamaModel } from "@/lib/ollama-storage";
+import { useOpenModel } from "@/hooks/use-open-model";
+import { openActionLabel } from "@/lib/task-support";
+import type { Model } from "@/lib/types";
 
 /** A row in the storage list — a model on disk we can measure and free. */
 interface Entry {
@@ -24,6 +27,13 @@ interface Entry {
   label: string;
   sub?: string;
   bytes: number;
+  /**
+   * The catalog entry, when we have one — it carries the task, which is what
+   * decides whether opening it means chat or a playground. Absent for Ollama
+   * models (managed through the Providers connection, not the catalog) and for
+   * anything cached before it was ever added to the store.
+   */
+  model?: Model;
 }
 
 /**
@@ -33,6 +43,7 @@ interface Entry {
  */
 export default function DownloadedPage() {
   const { onOpen } = useModal();
+  const openModel = useOpenModel();
   const models = useModelStore((s) => s.models);
   const chatBase = useChatProviderStore((s) => s.baseURL);
   const codegenBase = useCodegenProviderStore((s) => s.baseURL);
@@ -59,7 +70,13 @@ export default function DownloadedPage() {
     setBrowser(
       cached.map(({ modelId, bytes }) => {
         const known = models.find((m) => m.id === modelId);
-        return { id: modelId, label: known?.name ?? modelId, sub: modelId, bytes };
+        return {
+          id: modelId,
+          label: known?.name ?? modelId,
+          sub: modelId,
+          bytes,
+          model: known,
+        };
       })
     );
   }, [models]);
@@ -138,6 +155,7 @@ export default function DownloadedPage() {
           entries={browser}
           empty="No models downloaded to this browser yet."
           onFree={freeBrowser}
+          onUse={openModel}
         />
 
         {localBase ? (
@@ -166,11 +184,14 @@ function Section({
   entries,
   empty,
   onFree,
+  onUse,
 }: {
   title: string;
   entries: Entry[] | null;
   empty: string;
   onFree: (entry: Entry) => void;
+  /** Omitted for sections whose rows aren't openable (Ollama). */
+  onUse?: (model: Model) => void;
 }) {
   return (
     <div>
@@ -197,6 +218,18 @@ function Section({
               <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
                 {formatBytes(entry.bytes)}
               </span>
+              {/* Already downloaded, so opening it is the cheap, obvious next
+                  step — this page listed what you have without offering any way
+                  to use it. */}
+              {onUse && entry.model && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onUse(entry.model!)}
+                >
+                  {openActionLabel(entry.model.task)}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"

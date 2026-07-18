@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, Search } from "reicon-react";
 
@@ -15,8 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BrowserModelRow } from "@/components/models/browser-model-row";
 import { isRunnable, openActionLabel, unrunnableReason } from "@/lib/task-support";
-import { useModelStore } from "@/hooks/use-model-store";
-import { useChatStore } from "@/hooks/use-chat-store";
+import { useOpenModel } from "@/hooks/use-open-model";
 import { formatBytes, totalCachedSize } from "@/lib/model-cache";
 import { cn } from "@/lib/utils";
 import {
@@ -35,10 +33,7 @@ const sortLabels: Record<HubSort, string> = {
 };
 
 export default function ModelsPage() {
-  const router = useRouter();
-  const addModel = useModelStore((state) => state.addModel);
-  const setModel = useModelStore((state) => state.setModel);
-  const createChat = useChatStore((state) => state.createChat);
+  const openModel = useOpenModel();
 
   const [query, setQuery] = React.useState("");
   const [task, setTask] = React.useState<HfTask>("text-generation");
@@ -100,24 +95,6 @@ export default function ModelsPage() {
       controller.abort();
     };
   }, [query, task, sort, runtime]);
-
-  const openModel = (model: Model) => {
-    addModel(model);
-    setModel(model);
-    // Chat needs a first message the user types, so it lands on the composer.
-    // A playground task has nothing to type — the descriptor drives generation —
-    // so create the chat with a default brief and open it straight away, landing
-    // in the playground (which auto-generates) instead of an empty composer.
-    if (model.task === "text-generation") {
-      router.push("/");
-      return;
-    }
-    const id = createChat(
-      `${taskLabel(model.task)} playground for ${model.name}`,
-      model.id
-    );
-    router.push(`/c/${id}`);
-  };
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl min-h-0 flex-col gap-4 px-4 py-6">
