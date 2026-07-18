@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 
 import {
+  LOCAL_ENDPOINT_WHEN_HOSTED,
   isLocalBaseURL,
   parseConnection,
 } from "@/lib/connection";
@@ -69,10 +70,7 @@ export function providerRoute(cookieName: string) {
     // connection that can never work. Locally (next dev) it's the intended path.
     if (isLocalBaseURL(baseURL) && isHostedDeploy()) {
       return Response.json(
-        {
-          error:
-            "A localhost endpoint isn't reachable from a hosted Forge — run a browser model, or bring a cloud provider.",
-        },
+        { error: LOCAL_ENDPOINT_WHEN_HOSTED },
         { status: 400 }
       );
     }

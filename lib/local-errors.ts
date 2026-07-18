@@ -1,3 +1,8 @@
+import {
+  LOCAL_ENDPOINT_WHEN_HOSTED,
+  localProvidersAvailable,
+} from "@/lib/connection";
+
 /**
  * Turns failures from a LOCAL (Ollama) endpoint into a plain next step. The
  * client-side counterpart of the worker's friendlyError() — used only on the
@@ -16,9 +21,13 @@ export function friendlyLocalError(error: unknown): string {
       : "That model isn't installed. Pull it in Ollama, or pick another.";
   }
 
-  // The browser couldn't reach the endpoint at all.
+  // The browser couldn't reach the endpoint at all. On a hosted page that's
+  // structural, not configuration — say so instead of sending the user off to
+  // set OLLAMA_ORIGINS, which cannot help there.
   if (/failed to fetch|networkerror|load failed|econnrefused|fetch failed/i.test(message)) {
-    return "Couldn't reach the local server. Is Ollama running? (On a hosted deploy, also allow this origin via OLLAMA_ORIGINS.)";
+    return localProvidersAvailable()
+      ? "Couldn't reach the local server. Is Ollama running?"
+      : LOCAL_ENDPOINT_WHEN_HOSTED;
   }
 
   return message;

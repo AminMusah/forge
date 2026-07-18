@@ -135,6 +135,15 @@ export function localProvidersAvailable(): boolean {
 }
 
 /**
+ * One wording for every refusal of a localhost endpoint on a hosted Forge —
+ * the client pre-check and the server route both raise it, so whichever fires
+ * first says the same thing. Never mentions OLLAMA_ORIGINS: on a deploy that is
+ * advice the user cannot act on, and following it wastes their time.
+ */
+export const LOCAL_ENDPOINT_WHEN_HOSTED =
+  "A localhost endpoint isn't reachable from a hosted Forge — run a browser model, or bring a cloud provider.";
+
+/**
  * List the models an OpenAI-compatible endpoint has, from the browser. Used to
  * populate the model picker for LOCAL (Ollama) endpoints — the server can't
  * reach the user's localhost, but the browser can, and CORS is open there.
@@ -173,6 +182,14 @@ export async function verifyLocalConnection(
     host = new URL(baseURL).host;
   } catch {
     throw new Error("That base URL isn't valid.");
+  }
+  // Refuse before fetching. From a hosted page this request is doomed — Private
+  // Network Access blocks public→private, and https can't call http — and the
+  // generic failure below would blame the user's Ollama setup for something no
+  // amount of OLLAMA_ORIGINS can fix. The server route refuses this too, but the
+  // client verify runs first, so without this check its message never surfaces.
+  if (!localProvidersAvailable()) {
+    throw new Error(LOCAL_ENDPOINT_WHEN_HOSTED);
   }
   let res: Response;
   try {
