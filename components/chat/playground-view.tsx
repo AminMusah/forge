@@ -352,37 +352,48 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           <p className="text-sm text-muted-foreground">{status}</p>
         ) : null}
 
+        {/* Both panels stay MOUNTED and swap visibility rather than swapping
+            places. Unmounting the iframe to read the source tore the running
+            playground down with it — an uploaded image, a recording, a result,
+            all gone on the way back — and remounting CodeBlock re-paid Shiki's
+            first-use cost every time. Mounted early, it warms while you're
+            still looking at the preview. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {showCode && currentCode ? (
-            <CodeBlock code={currentCode} language="tsx" />
-          ) : srcdoc ? (
-            <iframe
-              ref={iframeRef}
-              srcDoc={srcdoc}
-              sandbox="allow-scripts"
-              className="h-full min-h-80 w-full rounded-lg border bg-card"
-              title="Generated playground"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground">
-              {/* Spinner ONLY while actually working — generating, compiling, or a
-                  stored version not yet rendered. A terminal status ("Stopped") or
-                  an error must NOT spin, and a version compiling on load is not
-                  "no playground" (that copy read as broken). */}
-              {(busy || compiling || versions.length > 0) && !error ? (
-                <>
-                  <Spinner className="size-4" />
-                  <span>{status ?? "Loading playground…"}</span>
-                </>
-              ) : error ? (
-                <span>Couldn&apos;t render this playground — see the error above.</span>
-              ) : status ? (
-                <span>{status}</span>
-              ) : (
-                <span>No playground yet.</span>
-              )}
+          {currentCode && (
+            <div className={cn(!showCode && "hidden")}>
+              <CodeBlock code={currentCode} language="tsx" />
             </div>
           )}
+          <div className={cn("h-full", showCode && "hidden")}>
+            {srcdoc ? (
+              <iframe
+                ref={iframeRef}
+                srcDoc={srcdoc}
+                sandbox="allow-scripts"
+                className="h-full min-h-80 w-full rounded-lg border bg-card"
+                title="Generated playground"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground">
+                {/* Spinner ONLY while actually working — generating, compiling, or a
+                    stored version not yet rendered. A terminal status ("Stopped") or
+                    an error must NOT spin, and a version compiling on load is not
+                    "no playground" (that copy read as broken). */}
+                {(busy || compiling || versions.length > 0) && !error ? (
+                  <>
+                    <Spinner className="size-4" />
+                    <span>{status ?? "Loading playground…"}</span>
+                  </>
+                ) : error ? (
+                  <span>Couldn&apos;t render this playground — see the error above.</span>
+                ) : status ? (
+                  <span>{status}</span>
+                ) : (
+                  <span>No playground yet.</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
