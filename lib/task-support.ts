@@ -33,6 +33,17 @@ export function isRunnable(model: Model): boolean {
   return true;
 }
 
+/**
+ * Label for the button that opens a model: chat for text-generation, the
+ * generated playground for every other task (ASR keeps the more specific
+ * "Transcribe"). Matches where openModel() actually lands the user.
+ */
+export function openActionLabel(task: HfTask): string {
+  if (task === "text-generation") return "Use in chat";
+  if (task === "automatic-speech-recognition") return "Transcribe";
+  return "Use in playground";
+}
+
 /** Why a model can't be used, for the tooltip on a disabled button. */
 export function unrunnableReason(model: Model): string | undefined {
   if (isRunnable(model)) return undefined;

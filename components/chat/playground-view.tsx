@@ -48,7 +48,6 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
 
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const compiled = React.useRef(new Map<string, string>());
-  const startedRef = React.useRef(false);
   const abortRef = React.useRef<AbortController | null>(null);
 
   const [current, setCurrent] = React.useState<string | null>(null);
@@ -112,17 +111,20 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const run = React.useCallback(
     async (
       body: Parameters<typeof requestPlayground>[0],
-      userTurn: string | null
+      userTurn: string | null,
+      // The auto-generate effect passes its own controller so its cleanup can
+      // abort — user-triggered runs (regenerate/modify) mint one here instead.
+      controller?: AbortController
     ) => {
       if (!model) return;
-      const controller = new AbortController();
-      abortRef.current = controller;
+      const ctrl = controller ?? new AbortController();
+      abortRef.current = ctrl;
       setBusy(true);
       setError(null);
       try {
         setStatus("Generating…");
-        const fresh = await requestPlayground(body, controller.signal);
-        const code = await settle(model.task, fresh, controller.signal);
+        const fresh = await requestPlayground(body, ctrl.signal);
+        const code = await settle(model.task, fresh, ctrl.signal);
         const assistant = message("assistant", code);
         appendTurns(
           userTurn ? [message("user", userTurn), assistant] : [assistant]
@@ -130,7 +132,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         setCurrent(assistant.id);
       } catch (e) {
         // Stop leaves the previous version intact — not an error.
-        if (controller.signal.aborted) setStatus("Stopped");
+        if (ctrl.signal.aborted) setStatus("Stopped");
         else {
           setError(e instanceof Error ? e.message : String(e));
           setStatus(null);
@@ -147,10 +149,14 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
 
   // Generate the first version when a freshly-created playground has none yet.
   // Not on reload: a chat that already has a version just compiles it below.
+  // The effect OWNS the abort (rather than a startedRef latch) so it survives
+  // React StrictMode's dev remount — the cleanup aborts, the re-run restarts —
+  // and a real navigation cancels the in-flight generation.
   React.useEffect(() => {
-    if (startedRef.current || versions.length > 0 || !firstRequest || !model) return;
-    startedRef.current = true;
-    void run({ task: model.task, request: firstRequest }, null);
+    if (versions.length > 0 || !firstRequest || !model) return;
+    const controller = new AbortController();
+    void run({ task: model.task, request: firstRequest }, null, controller);
+    return () => controller.abort();
   }, [versions.length, firstRequest, model, run]);
 
   // Default the view to the latest version once one exists.

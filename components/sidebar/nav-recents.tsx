@@ -81,7 +81,9 @@ const RecentRow = React.memo(function RecentRow({
         render={<Link href={`/c/${chatId}`} />}
         isActive={isActive}
       >
-        <span className="truncate">{title}</span>
+        <span className="truncate" title={title}>
+          {title}
+        </span>
       </SidebarMenuSubButton>
       <DropdownMenu>
         <DropdownMenuTrigger

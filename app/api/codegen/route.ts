@@ -7,7 +7,10 @@ import {
   buildCodegenPrompt,
   extractCode,
 } from "@/lib/playground/codegen-prompt";
-import { codegenModel } from "@/lib/playground/codegen-provider";
+import {
+  codegenModel,
+  freeCodegenModel,
+} from "@/lib/playground/codegen-provider";
 import {
   CODEGEN_COOKIE,
   parseConnection,
@@ -18,10 +21,13 @@ import { hfTasks, type HfTask } from "@/lib/hf-tasks";
 /**
  * Generates a playground UI for a task, from its descriptor.
  *
- * Its own route and model, separate from /api/chat: codegen is a distinct,
- * user-choosable capability (see lib/playground/codegen-provider.ts). The
- * provider is resolved there — this route just builds the prompt and runs it.
+ * Resolution: the user's BYO connection wins (their key, unlimited); with none,
+ * the free shared key writes ONE playground per browser as a first-run taste
+ * (when the operator opted in), then it's BYO. See codegen-provider.ts.
  */
+
+/** Marks a browser's one free generation as spent. httpOnly so JS can't clear it. */
+const FREE_USED_COOKIE = "codegen_free_used";
 
 const bodySchema = z.object({
   task: z.enum(hfTasks as unknown as [string, ...string[]]),
@@ -32,17 +38,22 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Codegen is strictly bring-your-own: no BYO connection means no model, so
-  // this route answers 401. There is deliberately no shared key (see
-  // codegen-provider.ts) — a public deploy must not proxy the operator's credits.
-  const connection = parseConnection(
-    (await cookies()).get(CODEGEN_COOKIE)?.value
-  );
-  const codegen = codegenModel({ connection });
+  const store = await cookies();
+  const connection = parseConnection(store.get(CODEGEN_COOKIE)?.value);
+
+  // The user's own key wins outright. With none, offer the free shared key —
+  // but only if this browser hasn't spent its one free generation yet.
+  let codegen = codegenModel({ connection });
+  let usingFree = false;
+  if (!codegen && store.get(FREE_USED_COOKIE)?.value !== "1") {
+    codegen = freeCodegenModel();
+    usingFree = codegen !== null;
+  }
   if (!codegen) {
+    // Free generation spent (or never offered) and no BYO connection.
     return Response.json(
-      { error: "Add a codegen provider to generate playgrounds." },
-      { status: 401 }
+      { error: "Add your own codegen provider to keep building playgrounds." },
+      { status: 402 }
     );
   }
 
@@ -85,6 +96,19 @@ export async function POST(req: Request) {
         { status: 502 }
       );
     }
+
+    // Spend the free generation only on success — a failed or aborted attempt
+    // shouldn't burn the visitor's one taste.
+    if (usingFree) {
+      store.set(FREE_USED_COOKIE, "1", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+    }
+
     return Response.json({ code });
   } catch (error) {
     return Response.json({ error: describeError(error) }, { status: 502 });

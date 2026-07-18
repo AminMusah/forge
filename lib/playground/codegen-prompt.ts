@@ -66,13 +66,17 @@ THIS MODEL (task: ${task}):
 
 /**
  * Coder models often wrap output in a ```tsx fence, or add a stray sentence.
- * Pull out the code: the first fenced block if present, else the whole text
- * minus any stray leading/trailing fence lines.
+ * Pull out the code: the LARGEST fenced block if any (a small model sometimes
+ * emits a one-line stray fence — a comment, a render call — before the real
+ * component, so the first block isn't the code), else the whole text minus any
+ * stray leading/trailing fence lines.
  */
 export function extractCode(text: string): string {
-  const fenced = /```(?:tsx?|jsx?|javascript|typescript)?\n([\s\S]*?)```/.exec(
-    text
-  );
-  if (fenced) return fenced[1].trim();
-  return text.replace(/^```[a-z]*\n?/i, "").replace(/```$/,"").trim();
+  const blocks = [
+    ...text.matchAll(/```(?:tsx?|jsx?|javascript|typescript)?\n([\s\S]*?)```/g),
+  ].map((m) => m[1].trim());
+  if (blocks.length > 0) {
+    return blocks.reduce((a, b) => (b.length > a.length ? b : a));
+  }
+  return text.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trim();
 }

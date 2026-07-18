@@ -14,8 +14,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BrowserModelRow } from "@/components/models/browser-model-row";
-import { isRunnable, unrunnableReason } from "@/lib/task-support";
+import { isRunnable, openActionLabel, unrunnableReason } from "@/lib/task-support";
 import { useModelStore } from "@/hooks/use-model-store";
+import { useChatStore } from "@/hooks/use-chat-store";
 import { formatBytes, totalCachedSize } from "@/lib/model-cache";
 import { cn } from "@/lib/utils";
 import {
@@ -37,6 +38,7 @@ export default function ModelsPage() {
   const router = useRouter();
   const addModel = useModelStore((state) => state.addModel);
   const setModel = useModelStore((state) => state.setModel);
+  const createChat = useChatStore((state) => state.createChat);
 
   const [query, setQuery] = React.useState("");
   const [task, setTask] = React.useState<HfTask>("text-generation");
@@ -99,10 +101,22 @@ export default function ModelsPage() {
     };
   }, [query, task, sort, runtime]);
 
-  const useInChat = (model: Model) => {
+  const openModel = (model: Model) => {
     addModel(model);
     setModel(model);
-    router.push("/");
+    // Chat needs a first message the user types, so it lands on the composer.
+    // A playground task has nothing to type — the descriptor drives generation —
+    // so create the chat with a default brief and open it straight away, landing
+    // in the playground (which auto-generates) instead of an empty composer.
+    if (model.task === "text-generation") {
+      router.push("/");
+      return;
+    }
+    const id = createChat(
+      `${taskLabel(model.task)} playground for ${model.name}`,
+      model.id
+    );
+    router.push(`/c/${id}`);
   };
 
   return (
@@ -236,7 +250,7 @@ export default function ModelsPage() {
                 <BrowserModelRow
                   key={model.id}
                   model={model}
-                  onUse={useInChat}
+                  onUse={openModel}
                 />
               ) : (
               <li
@@ -265,11 +279,9 @@ export default function ModelsPage() {
                   size="sm"
                   variant="outline"
                   disabled={!isRunnable(model)}
-                  onClick={() => useInChat(model)}
+                  onClick={() => openModel(model)}
                 >
-                  {model.task === "automatic-speech-recognition"
-                    ? "Transcribe"
-                    : "Use in chat"}
+                  {openActionLabel(model.task)}
                 </Button>
               </li>
               )
