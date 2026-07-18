@@ -6,6 +6,7 @@ import { Sparkles } from "reicon-react";
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavRecents } from "@/components/sidebar/nav-recents";
 import { TokenStatus } from "@/components/sidebar/token-status";
+import { GitHubLink } from "@/components/github-link";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sidebar,
@@ -23,6 +24,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <Sparkles className="size-4" />
           </div>
           <span className="flex-1 truncate text-sm font-semibold">Forge</span>
+          <GitHubLink />
           <ThemeToggle />
         </div>
       </SidebarHeader>
