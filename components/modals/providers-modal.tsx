@@ -41,7 +41,7 @@ export function ProvidersModal() {
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="grid-rows-[auto_1fr] overflow-hidden sm:max-w-lg max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>Providers</DialogTitle>
           <DialogDescription>
@@ -50,29 +50,34 @@ export function ProvidersModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <HfTokenSection onClose={onClose} />
-        <Separator />
-        <ConnectionSection
-          title="Chat provider"
-          purpose="for chat · optional"
-          blurb="Chat against your own OpenAI-compatible model — a local Ollama, or a proprietary model as a baseline. Or just pick a Hugging Face model above."
-          hasProvider={chat.hasProvider}
-          storedBaseURL={chat.baseURL}
-          storedModelId={chat.modelId}
-          onSave={chat.save}
-          onClear={chat.clear}
-        />
-        <Separator />
-        <ConnectionSection
-          title="Codegen provider"
-          purpose="for playgrounds · optional"
-          blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Your first playground is on us — bring a key to keep building."
-          hasProvider={codegen.hasProvider}
-          storedBaseURL={codegen.baseURL}
-          storedModelId={codegen.modelId}
-          onSave={codegen.save}
-          onClear={codegen.clear}
-        />
+        {/* The three sections can outgrow the viewport; scroll them, not the
+            dialog. Negative margin + padding keeps input focus rings from
+            being clipped by the overflow. */}
+        <div className="-mx-1 space-y-4 overflow-y-auto px-1">
+          <HfTokenSection onClose={onClose} />
+          <Separator />
+          <ConnectionSection
+            title="Chat provider"
+            purpose="for chat · optional"
+            blurb="Chat against your own OpenAI-compatible model — a local Ollama, or a proprietary model as a baseline. Or just pick a Hugging Face model above."
+            hasProvider={chat.hasProvider}
+            storedBaseURL={chat.baseURL}
+            storedModelId={chat.modelId}
+            onSave={chat.save}
+            onClear={chat.clear}
+          />
+          <Separator />
+          <ConnectionSection
+            title="Codegen provider"
+            purpose="for playgrounds · optional"
+            blurb="The AI that writes playground UIs. Any OpenAI-compatible endpoint. Your first playground is on us — bring a key to keep building."
+            hasProvider={codegen.hasProvider}
+            storedBaseURL={codegen.baseURL}
+            storedModelId={codegen.modelId}
+            onSave={codegen.save}
+            onClear={codegen.clear}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -280,7 +285,7 @@ function ConnectionSection({
           value={activePreset?.baseURL ?? ""}
           onChange={(e) => applyPreset(e.target.value)}
           className={cn(
-            "h-7 w-full rounded-md border border-input bg-input/20 px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-input/30"
+            "h-7 w-full rounded-md border border-input bg-input/20 px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-input/30",
           )}
         >
           {!activePreset && <option value="">Custom</option>}
@@ -301,7 +306,9 @@ function ConnectionSection({
         <Input
           value={modelId}
           onChange={(e) => setModelId(e.target.value)}
-          placeholder={local && localModels.length ? "pick or type a model" : "model id"}
+          placeholder={
+            local && localModels.length ? "pick or type a model" : "model id"
+          }
           autoComplete="off"
           spellCheck={false}
           list={localModels.length ? listId : undefined}
@@ -322,7 +329,11 @@ function ConnectionSection({
             autoComplete="off"
           />
           {hasProvider && (
-            <Button type="button" variant="outline" onClick={() => void onClear()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void onClear()}
+            >
               Remove
             </Button>
           )}
@@ -355,7 +366,7 @@ function StatusDot({ on }: { on: boolean | null }) {
       aria-label={on ? "Set" : "Not set"}
       className={cn(
         "size-2 shrink-0 rounded-full",
-        on ? "bg-emerald-500" : "bg-muted-foreground/40"
+        on ? "bg-emerald-500" : "bg-muted-foreground/40",
       )}
     />
   );
