@@ -15,7 +15,7 @@ import {
   removeCachedModel,
 } from "@/lib/model-cache";
 import { releaseModel } from "@/lib/worker-client";
-import { isLocalBaseURL } from "@/lib/connection";
+import { isLocalBaseURL, localProvidersAvailable } from "@/lib/connection";
 import { listOllamaModels, removeOllamaModel } from "@/lib/ollama-storage";
 import { useOpenModel } from "@/hooks/use-open-model";
 import { openActionLabel } from "@/lib/task-support";
@@ -52,6 +52,12 @@ export default function DownloadedPage() {
 
   const [browser, setBrowser] = React.useState<Entry[] | null>(null);
   const [ollama, setOllama] = React.useState<Entry[] | null>(null);
+
+  // Resolved after mount to keep SSR and hydration in agreement — see
+  // localProvidersAvailable. False on a deploy, where Ollama is unreachable and
+  // Providers doesn't offer it, so the whole section would be a dead end.
+  const [allowLocal, setAllowLocal] = React.useState(false);
+  React.useEffect(() => setAllowLocal(localProvidersAvailable()), []);
 
   // The Ollama endpoint rides whichever configured connection is local.
   const localBase = React.useMemo(
@@ -165,7 +171,10 @@ export default function DownloadedPage() {
             empty="No models installed in Ollama."
             onFree={freeOllama}
           />
-        ) : (
+        ) : allowLocal ? (
+          // Only worth prompting where the user can actually act on it. On a
+          // deploy this section is omitted entirely rather than pointing at a
+          // Providers option that isn't offered there.
           <div>
             <h2 className="mb-2 text-sm font-medium">Ollama</h2>
             <p className="text-sm text-muted-foreground">
@@ -173,7 +182,7 @@ export default function DownloadedPage() {
               its models here.
             </p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
