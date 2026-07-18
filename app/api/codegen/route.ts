@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { generateText } from "ai";
+import { APICallError, generateText } from "ai";
 
 import { describeError } from "@/lib/hf-router";
 import {
@@ -133,6 +133,31 @@ export async function POST(req: Request) {
 
     return Response.json({ code });
   } catch (error) {
-    return Response.json({ error: describeError(error) }, { status: 502 });
+    // The shared free key runs on Groq's free tier, whose token-per-minute
+    // budget is ORG-WIDE — so a second visitor generating in the same minute is
+    // enough to trip this. It's a busy signal, not a failure, and it deserves
+    // 429 plus a next step rather than a generic 502.
+    if (APICallError.isInstance(error) && error.statusCode === 429) {
+      return Response.json(
+        {
+          error: usingFree
+            ? "Free playgrounds are busy — the shared quota is per-minute. Wait a moment and try again, or add your own codegen provider to skip the queue."
+            : "Your codegen provider is rate-limiting this request. Wait a moment and try again.",
+        },
+        { status: 429 }
+      );
+    }
+    // A BYO failure repeats what the provider said, because that's how the user
+    // fixes a bad key or model id. A failure on the SHARED key must not: those
+    // messages name the operator's organization and quota, which tells the
+    // visitor nothing actionable and us rather more than it should.
+    return Response.json(
+      {
+        error: usingFree
+          ? "The free playground service failed. Try again, or add your own codegen provider."
+          : describeError(error),
+      },
+      { status: 502 }
+    );
   }
 }

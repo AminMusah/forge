@@ -50,9 +50,25 @@ async function requestServer(
     body: JSON.stringify(body),
     signal,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Codegen failed.");
-  return data.code as string;
+  // Not every rejection comes from our route. An edge rate limit or WAF rule
+  // answers before the function runs, with an HTML page rather than our JSON —
+  // parsing that first turned a "slow down" into a SyntaxError about an
+  // unexpected "<". Read the body defensively and let status carry the meaning.
+  const data = (await res.json().catch(() => null)) as {
+    error?: string;
+    code?: string;
+  } | null;
+
+  if (!res.ok) {
+    if (data?.error) throw new Error(data.error);
+    throw new Error(
+      res.status === 429 || res.status === 403
+        ? "Too many requests just now. Wait a minute and try again."
+        : `Codegen failed (HTTP ${res.status}).`
+    );
+  }
+  if (!data?.code) throw new Error("Codegen returned no code.");
+  return data.code;
 }
 
 /** Generate against a local endpoint directly from the browser (no server hop). */

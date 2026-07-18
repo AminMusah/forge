@@ -14,11 +14,12 @@ import type { Connection } from "@/lib/connection";
  *   3. null — nothing available; the route answers 402 "add your own key".
  *
  * The shared key is deliberately gated AND capped: /api/codegen has no auth, so
- * an ungated shared key is an unmetered LLM proxy on the operator's bill. The
+ * an ungated shared key is an unmetered LLM proxy on the operator's account. The
  * per-browser counter cookie (see the route) is only a speed bump for honest
- * visitors — a spending cap on the Groq account is the real ceiling. Every
- * provider is reached through ONE OpenAI-compatible seam — a provider is just a
- * base URL.
+ * visitors; edge rate limiting is what stops a script, and the account's own
+ * ceiling — a spend limit on a paid tier, or the org-wide rate budget on the
+ * free one — is what bounds the rest. See .env.example. Every provider is
+ * reached through ONE OpenAI-compatible seam: a provider is just a base URL.
  */
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -27,9 +28,12 @@ const GROQ_CODEGEN_MODEL = "openai/gpt-oss-120b";
 /**
  * Free playgrounds per browser, ON A HOSTED DEPLOY. Enough to actually feel the
  * loop — generate, see it run, try another task — rather than a single shot the
- * visitor spends before understanding what they got. Raising this raises the
- * operator's worst-case bill proportionally; the Groq spending cap is what
- * bounds it. Running the repo locally isn't metered at all: the key is the
+ * visitor spends before understanding what they got.
+ *
+ * Raising it multiplies the operator's worst case proportionally, and on Groq's
+ * free tier that cost is paid in SHARED RATE, not money: the token-per-minute
+ * budget is org-wide, so a generous allowance here shows up as 429s for other
+ * visitors. Running the repo locally isn't metered at all — the key is the
  * developer's own, so there's no third party to protect.
  */
 export const FREE_CODEGEN_LIMIT = 3;
