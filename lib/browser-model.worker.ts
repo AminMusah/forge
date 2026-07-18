@@ -183,8 +183,11 @@ async function load(
   // Fail fast: on WASM a 0.5B model runs at a few tokens/sec, which is
   // indistinguishable from a hang.
   if (!("gpu" in navigator)) {
+    // Don't name browsers to switch to. Every major one ships WebGPU now, so a
+    // miss means an OUT OF DATE browser — and on iOS every browser is WebKit,
+    // making "try Chrome" advice that cannot possibly work there.
     throw new Error(
-      "This model needs WebGPU, which this browser doesn't support. Try Chrome or Edge."
+      "This model needs WebGPU, which this browser doesn't support. Update your browser — on iPhone or iPad that means iOS 26 or later."
     );
   }
 

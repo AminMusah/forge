@@ -49,7 +49,7 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
     ? unrunnableReason(model)
     : webgpu
       ? undefined
-      : "Requires WebGPU — try Chrome or Edge";
+      : "Needs WebGPU — update your browser (iOS 26+ on iPhone)";
 
   // Cache Storage is the source of truth — no bookkeeping of ours to drift. The
   // task decides which files to look for: Whisper ships two graphs, not one.

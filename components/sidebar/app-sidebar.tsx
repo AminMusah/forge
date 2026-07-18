@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { Sparkles } from "reicon-react";
 
 import { NavMain } from "@/components/sidebar/nav-main";
@@ -13,9 +14,20 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
+
+  // On mobile the sidebar is an overlay, so navigating left it covering the very
+  // page it was asked for. Closing on pathname change rather than per-link means
+  // Recents and anything added later are covered without remembering to.
+  React.useEffect(() => {
+    setOpenMobile(false);
+  }, [pathname, setOpenMobile]);
+
   return (
     <Sidebar collapsible="offcanvas" variant="floating" {...props}>
       <SidebarHeader>

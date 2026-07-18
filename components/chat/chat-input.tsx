@@ -313,7 +313,7 @@ export function ChatInput({
             // Same idiom as the unbuilt controls: a button that can't do its
             // job still has to say why.
             <Unavailable
-              label="Voice input needs WebGPU — try Chrome or Edge"
+              label="Voice input needs WebGPU — update your browser (iOS 26+ on iPhone)"
               className="size-8 px-0"
             >
               <Microphone />
