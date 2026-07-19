@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { Sparkles } from "reicon-react";
 
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavRecents } from "@/components/sidebar/nav-recents";
@@ -32,8 +31,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="offcanvas" variant="floating" {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-2 p-1 pt-2">
-          <div className="flex aspect-square size-6 items-center justify-center rounded bg-[#123524] text-sidebar-primary-foreground">
-            <Sparkles className="size-4" />
+          {/* Same mark as app/icon.svg — a letterform rather than a glyph,
+              because the favicon has to survive 16px. */}
+          <div className="flex aspect-square size-6 items-center justify-center rounded bg-[#123524]">
+            <svg viewBox="0 0 12 20" className="h-3 w-auto" aria-hidden="true">
+              <path d="M0 0h12v4H4v4h7v4H4v8H0z" fill="#ffffff" />
+            </svg>
           </div>
           <span className="flex-1 truncate text-sm font-semibold">Forge</span>
           <GitHubLink />
