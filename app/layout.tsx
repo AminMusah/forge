@@ -24,8 +24,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Absolute base for the generated OG image — without it the card resolves to
+  // a relative path and most scrapers drop it.
+  metadataBase: new URL("https://modelplayground.dev"),
   title: "Forge",
-  description: "Forge — your AI chat workspace",
+  description:
+    "Test open models without the setup. Run Hugging Face models on your GPU, in the browser.",
 };
 
 export default function RootLayout({
