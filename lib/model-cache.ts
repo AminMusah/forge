@@ -10,7 +10,27 @@ import type { HfTask } from "@/lib/hf-tasks";
  */
 const CACHE_NAME = "transformers-cache";
 
-export type Dtype = "q4" | "q4f16" | "fp16" | "int8";
+/**
+ * ONNX variants Forge offers, mapped to the filename suffix transformers.js
+ * looks for. Two don't follow the `_${dtype}` pattern and both are common
+ * enough that missing them hid most of the Hub: an unquantized graph carries NO
+ * suffix at all, and q8 is written `_quantized` by the older export convention
+ * that most vision models still use. Matching only `_q4`/`_fp16`/`_int8` left
+ * image-classification with one runnable model out of twenty.
+ *
+ * Ordered smallest to largest — search falls back to the first available when a
+ * model doesn't ship the default, and a smaller download is the kinder guess.
+ */
+export const DTYPE_SUFFIX = {
+  q4: "_q4",
+  q4f16: "_q4f16",
+  int8: "_int8",
+  q8: "_quantized",
+  fp16: "_fp16",
+  fp32: "",
+} as const;
+
+export type Dtype = keyof typeof DTYPE_SUFFIX;
 
 /** Verified coherent across GPUs; q4f16 degenerates into loops on some of them. */
 export const DEFAULT_DTYPE: Dtype = "q4";
@@ -24,10 +44,14 @@ export const DEFAULT_DTYPE: Dtype = "q4";
  * The encoder is unquantized on purpose; see the dtype split in the worker.
  */
 export function weightFiles(task: HfTask, dtype: Dtype): string[] {
+  const suffix = DTYPE_SUFFIX[dtype];
   if (task === "automatic-speech-recognition") {
-    return ["onnx/encoder_model.onnx", `onnx/decoder_model_merged_${dtype}.onnx`];
+    return [
+      "onnx/encoder_model.onnx",
+      `onnx/decoder_model_merged${suffix}.onnx`,
+    ];
   }
-  return [`onnx/model_${dtype}.onnx`];
+  return [`onnx/model${suffix}.onnx`];
 }
 
 function weightUrls(modelId: string, task: HfTask, dtype: Dtype): string[] {

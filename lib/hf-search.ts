@@ -1,5 +1,5 @@
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
-import { DEFAULT_DTYPE, type Dtype } from "@/lib/model-cache";
+import { DEFAULT_DTYPE, DTYPE_SUFFIX, type Dtype } from "@/lib/model-cache";
 import type { Model } from "@/lib/types";
 
 interface HubModelResult {
@@ -25,8 +25,15 @@ export type Runtime = "server" | "browser";
 function availableDtypes(siblings: HubModelResult["siblings"]): Dtype[] {
   const files = (siblings ?? []).map((s) => s.rfilename);
   const found: Dtype[] = [];
-  for (const dtype of ["q4", "q4f16", "fp16", "int8"] as Dtype[]) {
-    if (files.some((file) => file.endsWith(`_${dtype}.onnx`))) found.push(dtype);
+  for (const dtype of Object.keys(DTYPE_SUFFIX) as Dtype[]) {
+    const suffix = DTYPE_SUFFIX[dtype];
+    const present = suffix
+      ? files.some((file) => file.endsWith(`${suffix}.onnx`))
+      : // fp32 carries no suffix, so match the bare graph — `model.onnx`, or
+        // `encoder_model.onnx` for an encoder-decoder. A suffixed sibling like
+        // `model_q4.onnx` ends in `q4.onnx` and can't collide with this.
+        files.some((file) => /(^|\/)[\w.-]*model\.onnx$/i.test(file));
+    if (present) found.push(dtype);
   }
   return found;
 }
