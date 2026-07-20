@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, Search } from "reicon-react";
 
@@ -32,13 +33,53 @@ const sortLabels: Record<HubSort, string> = {
   createdAt: "Newest",
 };
 
-export default function ModelsPage() {
-  const openModel = useOpenModel();
+/**
+ * Query params are user input, so every one falls back rather than being
+ * trusted — an unknown ?task= must not break the search.
+ */
+function paramTask(value: string | null): HfTask {
+  return (hfTasks as readonly string[]).includes(value ?? "")
+    ? (value as HfTask)
+    : "text-generation";
+}
 
-  const [query, setQuery] = React.useState("");
-  const [task, setTask] = React.useState<HfTask>("text-generation");
-  const [sort, setSort] = React.useState<HubSort>("trendingScore");
-  const [runtime, setRuntime] = React.useState<Runtime>("server");
+function paramSort(value: string | null): HubSort {
+  return value !== null && value in sortLabels
+    ? (value as HubSort)
+    : "trendingScore";
+}
+
+/**
+ * Browser is the default. Local models need no key and run immediately, so
+ * opening on server models put a token wall in front of the one thing a
+ * first-time visitor can actually use.
+ */
+function paramRuntime(value: string | null): Runtime {
+  return value === "server" ? "server" : "browser";
+}
+
+/** useSearchParams needs a Suspense boundary to keep this page prerenderable. */
+export default function ModelsPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <ModelsBrowser />
+    </React.Suspense>
+  );
+}
+
+function ModelsBrowser() {
+  const openModel = useOpenModel();
+  const params = useSearchParams();
+
+  // Read once, on mount. Filters aren't written back to the URL — a link can
+  // aim someone at a starting view without every dropdown change growing the
+  // history stack.
+  const [query, setQuery] = React.useState(() => params.get("q") ?? "");
+  const [task, setTask] = React.useState<HfTask>(() => paramTask(params.get("task")));
+  const [sort, setSort] = React.useState<HubSort>(() => paramSort(params.get("sort")));
+  const [runtime, setRuntime] = React.useState<Runtime>(() =>
+    paramRuntime(params.get("runtime"))
+  );
   const [results, setResults] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [cacheUsed, setCacheUsed] = React.useState(0);
