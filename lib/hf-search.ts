@@ -22,17 +22,20 @@ export type Runtime = "server" | "browser";
  * `decoder_model_merged_q4.onnx`. Looking for the former dropped every browser
  * Whisper model from search as having no runnable quantization.
  */
-function availableDtypes(siblings: HubModelResult["siblings"]): Dtype[] {
-  const files = (siblings ?? []).map((s) => s.rfilename);
+function availableDtypes(files: string[]): Dtype[] {
+  // ONLY the onnx/ subfolder counts. transformers.js resolves weights from
+  // there; a bare `model.onnx` at the repo root is the generic ONNX Runtime
+  // layout and won't load, so counting it offered downloads that failed.
+  const onnx = files.filter((file) => file.startsWith("onnx/"));
   const found: Dtype[] = [];
   for (const dtype of Object.keys(DTYPE_SUFFIX) as Dtype[]) {
     const suffix = DTYPE_SUFFIX[dtype];
     const present = suffix
-      ? files.some((file) => file.endsWith(`${suffix}.onnx`))
+      ? onnx.some((file) => file.endsWith(`${suffix}.onnx`))
       : // fp32 carries no suffix, so match the bare graph — `model.onnx`, or
         // `encoder_model.onnx` for an encoder-decoder. A suffixed sibling like
         // `model_q4.onnx` ends in `q4.onnx` and can't collide with this.
-        files.some((file) => /(^|\/)[\w.-]*model\.onnx$/i.test(file));
+        onnx.some((file) => /\/[\w.-]*model\.onnx$/i.test(file));
     if (present) found.push(dtype);
   }
   return found;
@@ -108,10 +111,15 @@ export async function searchHubModels(
 
   return results
     .map((m): Model | null => {
-      const dtypes = isBrowser ? availableDtypes(m.siblings) : [];
-      // A browser model with no quantization we support would download
-      // gigabytes of fp32 — drop it rather than offer a trap.
-      if (isBrowser && dtypes.length === 0) return null;
+      const files = (m.siblings ?? []).map((s) => s.rfilename);
+      const dtypes = isBrowser ? availableDtypes(files) : [];
+      // Two ways a browser model is a trap rather than an option: no weights in
+      // a layout transformers.js can resolve, or no config.json — without which
+      // the pipeline dies on "Unsupported model type: null" AFTER the user has
+      // sat through the download. Drop both rather than offer them.
+      if (isBrowser && (dtypes.length === 0 || !files.includes("config.json"))) {
+        return null;
+      }
 
       const liveProviders = (m.inferenceProviderMapping ?? [])
         .filter((p) => p.status === "live")
