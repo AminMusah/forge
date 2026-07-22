@@ -51,9 +51,15 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
+        {/* Dark by default rather than "system": Forge is a dark product — the
+            playground iframe hardcodes a dark shell (lib/playground/iframe.ts)
+            and the generated UIs are prompted for one, so a light-mode OS would
+            otherwise frame dark content in a light chrome. `enableSystem` stays
+            on, so "System" is still a choice the toggle offers — just not the
+            one a first-time visitor lands on. */}
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >
