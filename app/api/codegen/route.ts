@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { APICallError, generateText } from "ai";
+import { APICallError, generateText, type LanguageModel } from "ai";
 
 import { describeError } from "@/lib/hf-router";
 import {
@@ -67,11 +67,16 @@ export async function POST(req: Request) {
 
   // 1. the user's explicit codegen key wins outright.
   let codegen = codegenModel({ connection });
+  // Which rung is generating. `usingFree` already gates what a failure may say
+  // and whether a generation is spent; `usingHfToken` additionally decides
+  // whether a failure is allowed to fall through (see the catch below).
   let usingFree = false;
+  let usingHfToken = false;
   // 2. else their HF token runs codegen on the router's coder — their own quota,
   //    unlimited, and NOT metered (usingFree stays false): it isn't the shared key.
   if (!codegen && hfToken) {
     codegen = hfCodegenModel(hfToken);
+    usingHfToken = true;
   }
   // 3. else the operator's free doormat, capped, on a hosted deploy.
   if (!codegen && (!metered || used < FREE_CODEGEN_LIMIT)) {
@@ -110,9 +115,9 @@ export async function POST(req: Request) {
     { previousCode, instruction }
   );
 
-  try {
-    const { text } = await generateText({
-      model: codegen.model,
+  const generate = (model: LanguageModel) =>
+    generateText({
+      model,
       system,
       prompt,
       // A full single-file playground is a few hundred lines; give it room.
@@ -120,6 +125,49 @@ export async function POST(req: Request) {
       maxRetries: 2,
       abortSignal: req.signal,
     });
+
+  try {
+    let text: string;
+    try {
+      ({ text } = await generate(codegen.model));
+    } catch (error) {
+      // An HF token with nothing left in it must not leave the visitor WORSE OFF
+      // than one who never added a token: rung 2 sits above the doormat, so a
+      // dead rung 2 falls through to rung 3 rather than dead-ending. Depleted
+      // credits arrive as a 402 — lib/hf-router.ts digs that status out of the
+      // HTTP 200 the router hides it in — which is exactly the permanent-failure
+      // signal to switch on. Anything else (a cold start, a 5xx) is transient and
+      // must NOT burn the doormat.
+      const outOfCredits =
+        usingHfToken &&
+        APICallError.isInstance(error) &&
+        error.statusCode === 402;
+      const fallback =
+        outOfCredits && (!metered || used < FREE_CODEGEN_LIMIT)
+          ? freeCodegenModel()
+          : null;
+      if (!fallback) {
+        // No doormat to fall to (not opted in, or the taste is spent). 402, not
+        // 502: retrying cannot clear this, and the client keys the dead-end wall
+        // off exactly that status.
+        if (outOfCredits) {
+          return Response.json(
+            {
+              error:
+                "Your Hugging Face credits are used up — they reset monthly. Add a codegen provider with your own key to keep generating now.",
+            },
+            { status: 402 }
+          );
+        }
+        throw error;
+      }
+      // The doormat is generating now, so it owns both the failure vocabulary
+      // and the spend — a fallback generation costs the visitor one of its free
+      // playgrounds, same as if they'd never had a token.
+      usingHfToken = false;
+      usingFree = true;
+      ({ text } = await generate(fallback.model));
+    }
 
     const code = extractCode(text);
     if (!code) {

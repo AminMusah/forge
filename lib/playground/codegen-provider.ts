@@ -9,11 +9,15 @@ import { hfModel } from "@/lib/hf-router";
  * The codegen model — the cloud AI that writes playground UIs.
  *
  * Resolution (encoded across here and app/api/codegen/route.ts):
- *   1. the user's BYO connection — their key, their quota. Unlimited.
- *   2. the free shared key — Groq, but only for a visitor's first
+ *   1. the user's BYO connection — their key, their quota. Unlimited. Never
+ *      falls back: a BYO failure is the user's own key to fix.
+ *   2. the user's HF token, on the router's coder — their own quota, unlimited.
+ *      A depleted token (402) falls through to 3 rather than dead-ending: it's
+ *      a credential Forge asked them to add, so Forge owns the failure.
+ *   3. the free shared key — Groq, but only for a visitor's first
  *      FREE_CODEGEN_LIMIT generations, and only when the operator opts in
  *      (FORGE_FREE_CODEGEN=1 + GROQ_API_KEY). The first-run taste.
- *   3. null — nothing available; the route answers 402 "add your own key".
+ *   4. null — nothing available; the route answers 402 "add your own key".
  *
  * The shared key is deliberately gated AND capped: /api/codegen has no auth, so
  * an ungated shared key is an unmetered LLM proxy on the operator's account. The

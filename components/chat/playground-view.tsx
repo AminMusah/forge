@@ -65,16 +65,26 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const [busy, setBusy] = React.useState(false);
   const [compiling, setCompiling] = React.useState(false);
   const [showCode, setShowCode] = React.useState(false);
-  /** The free allowance ran out (402). Retrying can't fix it; a key can. */
-  const [exhausted, setExhausted] = React.useState(false);
+  /**
+   * The credentials in play when codegen last dead-ended (402), or null. A 402
+   * means no credential currently held can generate — which stays true until the
+   * credentials CHANGE. Comparing a fingerprint rather than testing `!hasToken`
+   * is what lets the wall fire for someone who HAS a token that has nothing left
+   * in it; testing absence hid that case entirely.
+   */
+  const [spentWith, setSpentWith] = React.useState<string | null>(null);
+  /** The route's own 402 copy — it knows WHICH credential ran out; we don't. */
+  const [wallMessage, setWallMessage] = React.useState<string | null>(null);
 
   const { onOpen } = useModal();
   const perf = useModelPerfStore((s) => (model ? s.stats[model.id] : undefined));
   const hasCodegenProvider = useCodegenProviderStore((s) => s.hasProvider);
   const hasToken = useTokenStore((s) => s.hasToken);
-  // Self-healing: saving a codegen connection OR an HF token lifts the block —
-  // both now unlock codegen, so either flipping true means "you're past the wall".
-  const blocked = exhausted && !hasCodegenProvider && !hasToken;
+  // Self-healing: saving a codegen connection OR an HF token changes the
+  // fingerprint, so the wall lifts the moment the credentials differ from the
+  // ones that dead-ended.
+  const credentials = `${hasCodegenProvider}:${hasToken}`;
+  const blocked = spentWith !== null && spentWith === credentials;
 
   const versions = React.useMemo(
     () => messages.filter((m) => m.role === "assistant"),
@@ -150,7 +160,8 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           userTurn ? [message("user", userTurn), assistant] : [assistant]
         );
         setCurrent(assistant.id);
-        setExhausted(false);
+        setSpentWith(null);
+        setWallMessage(null);
       } catch (e) {
         // A newer run already owns the UI (StrictMode's dev remount restarts this
         // effect, so the aborted first run rejects LATE) — don't clobber it with
@@ -159,9 +170,20 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
         // Stop leaves the previous version intact — not an error.
         if (ctrl.signal.aborted) setStatus("Stopped");
         else {
-          // 402 is the one failure retrying can never clear — record it so the
-          // controls can offer the fix instead of a button doomed to repeat.
-          if (e instanceof CodegenError && e.status === 402) setExhausted(true);
+          // 402 is the one failure retrying can never clear — record which
+          // credentials it happened under so the controls can offer the fix.
+          // Read from the stores rather than closing over the derived value:
+          // adding it to this callback's deps would change `run`'s identity, and
+          // the auto-generate effect depends on `run` — it would restart
+          // generation on every token change.
+          if (e instanceof CodegenError && e.status === 402) {
+            setSpentWith(
+              `${useCodegenProviderStore.getState().hasProvider}:${
+                useTokenStore.getState().hasToken
+              }`
+            );
+            setWallMessage(e.message);
+          }
           setError(e instanceof Error ? e.message : String(e));
           setStatus(null);
         }
@@ -372,11 +394,11 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           // swallows its own tooltip, so the explanation has to be visible.
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3">
             <p className="text-sm text-muted-foreground">
-              You&apos;ve used your free playgrounds. Add your Hugging Face token —
-              it powers cloud chat and unlimited codegen, on your own account.
+              {wallMessage ??
+                "You've used your free playgrounds. Add your Hugging Face token — it powers cloud chat and unlimited codegen, on your own account."}
             </p>
             <Button size="sm" className="ml-auto" onClick={() => onOpen("providers")}>
-              Add your Hugging Face token
+              {hasToken ? "Add a codegen provider" : "Add your Hugging Face token"}
             </Button>
           </div>
         ) : error ? (
@@ -439,7 +461,9 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
             disabled={busy || blocked}
             placeholder={
               blocked
-                ? "Add your Hugging Face token to keep editing"
+                ? hasToken
+                  ? "Add a codegen provider to keep editing"
+                  : "Add your Hugging Face token to keep editing"
                 : "Change the playground — e.g. make the boxes red, show a count…"
             }
             className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
