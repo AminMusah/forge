@@ -369,8 +369,23 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
   // Time the inference ONLY — image decoding and argument shuffling above are
   // input prep, and folding them in would flatter or blame the model for work it
   // didn't do.
+  // Object detection filters by score AT THE PIPELINE, and transformers.js
+  // defaults that threshold to 0.9 — high enough that a model like DETR drops
+  // most real detections before the generated UI (or its score slider) ever
+  // sees them, so the playground renders no boxes on any but the most obvious
+  // images. Seed a low floor so the pipeline returns generously; the UI slider
+  // is what the user actually filters with. An explicit threshold from the
+  // generated code still wins.
+  const options: Record<string, unknown> = { ...(input.options ?? {}) };
+  if (
+    (task === "object-detection" || task === "zero-shot-object-detection") &&
+    options.threshold === undefined
+  ) {
+    options.threshold = 0.1;
+  }
+
   const inferStart = performance.now();
-  const data = await loaded.pipe(...args, input.options ?? {});
+  const data = await loaded.pipe(...args, options);
   const inferenceMs = performance.now() - inferStart;
 
   post({ type: "stats", id, loadMs, tokensPerSecond: 0, inferenceMs });
