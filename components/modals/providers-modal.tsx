@@ -327,9 +327,21 @@ function ConnectionSection({
             "h-7 w-full rounded-md border border-input bg-input/20 px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-input/30",
           )}
         >
-          {!activePreset && <option value="">Custom</option>}
+          {/* Options need an explicit solid surface: the select's background is
+              translucent (bg-input), so in dark mode the native dropdown list
+              renders these invisible until hover/selection applies its own
+              highlight. bg-popover is the solid popup surface token. */}
+          {!activePreset && (
+            <option value="" className="bg-popover text-popover-foreground">
+              Custom
+            </option>
+          )}
           {presets.map((p) => (
-            <option key={p.baseURL} value={p.baseURL}>
+            <option
+              key={p.baseURL}
+              value={p.baseURL}
+              className="bg-popover text-popover-foreground"
+            >
               {p.label}
             </option>
           ))}
