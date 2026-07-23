@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowsRotate } from "reicon-react";
+import { ArrowsRotate, Share } from "reicon-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -16,6 +17,7 @@ import { useModelPerfStore } from "@/hooks/use-model-perf-store";
 import { useTokenStore } from "@/hooks/use-token-store";
 import { compilePlayground } from "@/lib/playground/compile";
 import { buildPlaygroundSrcdoc } from "@/lib/playground/iframe";
+import { buildSharePath } from "@/lib/playground/share";
 import { DEFAULT_DTYPE } from "@/lib/model-cache";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -265,6 +267,24 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
     void run({ task: model.task, request: firstRequest }, null);
   };
 
+  /** Compress the current version into a `/p` link and copy it — the whole
+   *  point of the growth loop, so it never touches a server. */
+  const share = React.useCallback(async () => {
+    if (!model || !currentCode) return;
+    try {
+      const path = await buildSharePath({
+        code: currentCode,
+        task: model.task,
+        modelId: model.id,
+        dtype: model.dtype ?? DEFAULT_DTYPE,
+      });
+      await navigator.clipboard.writeText(window.location.origin + path);
+      toast.success("Share link copied");
+    } catch {
+      toast.error("Couldn't create a share link");
+    }
+  }, [model, currentCode]);
+
   if (!exists) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
@@ -328,6 +348,17 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
               className="inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
             >
               <ArrowsRotate className="size-3.5" />
+            </button>
+            {/* Copies a self-contained /p link — the code lives in the URL
+                fragment, so Forge never sees it. */}
+            <button
+              onClick={() => void share()}
+              disabled={!currentCode}
+              title="Copy a shareable link"
+              aria-label="Share"
+              className="inline-flex items-center rounded-full border p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Share className="size-3.5" />
             </button>
           </div>
         )}

@@ -136,6 +136,12 @@ interface ChatStore {
    * alongside it rather than replacing it, so the title reads the same either way.
    */
   createChat: (content: string, modelId: string, file?: MessageFile) => string;
+  /**
+   * Create a playground chat seeded with an already-generated version (a shared
+   * playground). Unlike createChat it adds the assistant version directly, so the
+   * playground opens on that code instead of auto-generating a fresh one.
+   */
+  createSharedChat: (title: string, modelId: string, code: string) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
   sendMessage: (
     chatId: string,
@@ -171,6 +177,22 @@ export const useChatStore = create<ChatStore>()(
               content: content.trim(),
               ...(file ? { file } : {}),
             },
+          ],
+        };
+        set((state) => ({ chats: [chat, ...state.chats] }));
+        return id;
+      },
+
+      createSharedChat: (title, modelId, code) => {
+        const id = crypto.randomUUID();
+        const chat: Chat = {
+          id,
+          title: titleFrom(title),
+          updatedAt: today(),
+          modelId,
+          messages: [
+            { id: crypto.randomUUID(), role: "user", content: title },
+            { id: crypto.randomUUID(), role: "assistant", content: code },
           ],
         };
         set((state) => ({ chats: [chat, ...state.chats] }));
