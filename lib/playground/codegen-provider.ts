@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 
 import type { Connection } from "@/lib/connection";
 import { fetchGuarded } from "@/lib/connection-policy";
+import { hfModel } from "@/lib/hf-router";
 
 /**
  * The codegen model — the cloud AI that writes playground UIs.
@@ -25,6 +26,12 @@ import { fetchGuarded } from "@/lib/connection-policy";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GROQ_CODEGEN_MODEL = "openai/gpt-oss-120b";
+
+// The coder the HF-token path runs, provider-pinned (":fastest") so the router's
+// automatic provider selection can't whiff on a long-tail model. One named
+// constant, like GROQ_CODEGEN_MODEL, so swapping in a better open coder later is
+// a one-line change. Matches the Hugging Face preset default in lib/connection.ts.
+const HF_CODEGEN_MODEL = "Qwen/Qwen3-Coder-480B-A35B-Instruct:fastest";
 
 /**
  * Free playgrounds per browser, ON A HOSTED DEPLOY. Enough to actually feel the
@@ -81,4 +88,14 @@ export function freeCodegenModel(): CodegenModel | null {
     };
   }
   return null;
+}
+
+/**
+ * Codegen on the user's OWN Hugging Face token, via the router — their HF quota,
+ * HF-native, unlimited. Ranks ABOVE the free Groq doormat in the route because
+ * it's the user's own credential and never burdens the operator's shared key.
+ * The token is the same hf_token cookie that powers cloud chat.
+ */
+export function hfCodegenModel(apiKey: string): CodegenModel {
+  return { model: hfModel({ apiKey, modelId: HF_CODEGEN_MODEL }) };
 }

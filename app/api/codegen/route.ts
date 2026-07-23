@@ -11,6 +11,7 @@ import {
   FREE_CODEGEN_LIMIT,
   codegenModel,
   freeCodegenModel,
+  hfCodegenModel,
 } from "@/lib/playground/codegen-provider";
 import {
   CODEGEN_COOKIE,
@@ -19,6 +20,7 @@ import {
 import { isHostedDeploy } from "@/lib/connection-policy";
 import { descriptorFor } from "@/lib/playground/descriptors";
 import { hfTasks, type HfTask } from "@/lib/hf-tasks";
+import { TOKEN_COOKIE } from "@/app/api/token/route";
 
 /**
  * Generates a playground UI for a task, from its descriptor.
@@ -54,6 +56,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const store = await cookies();
   const connection = parseConnection(store.get(CODEGEN_COOKIE)?.value);
+  const hfToken = store.get(TOKEN_COOKIE)?.value;
 
   // Metering exists to bound the OPERATOR's bill against anonymous visitors on a
   // public deploy. Running the repo locally there are none — it's the
@@ -62,18 +65,26 @@ export async function POST(req: Request) {
   const metered = isHostedDeploy();
   const used = freeUsed(store.get(FREE_USED_COOKIE)?.value);
 
-  // The user's own key wins outright. With none, offer the free shared key —
-  // on a deploy, only while this browser is under its allowance.
+  // 1. the user's explicit codegen key wins outright.
   let codegen = codegenModel({ connection });
   let usingFree = false;
+  // 2. else their HF token runs codegen on the router's coder — their own quota,
+  //    unlimited, and NOT metered (usingFree stays false): it isn't the shared key.
+  if (!codegen && hfToken) {
+    codegen = hfCodegenModel(hfToken);
+  }
+  // 3. else the operator's free doormat, capped, on a hosted deploy.
   if (!codegen && (!metered || used < FREE_CODEGEN_LIMIT)) {
     codegen = freeCodegenModel();
     usingFree = codegen !== null;
   }
   if (!codegen) {
-    // Free allowance spent (or never offered) and no BYO connection.
+    // No key, no HF token, and the free taste is spent — convert the wall.
     return Response.json(
-      { error: "Add your own codegen provider to keep building playgrounds." },
+      {
+        error:
+          "You've used your free playgrounds. Add your Hugging Face token — it powers cloud chat and unlimited codegen, on your own account.",
+      },
       { status: 402 }
     );
   }
@@ -141,7 +152,7 @@ export async function POST(req: Request) {
       return Response.json(
         {
           error: usingFree
-            ? "Free playgrounds are busy — the shared quota is per-minute. Wait a moment and try again, or add your own codegen provider to skip the queue."
+            ? "Free playgrounds are busy right now — add your Hugging Face token to skip the shared queue with your own quota, or wait a moment and try again."
             : "Your codegen provider is rate-limiting this request. Wait a moment and try again.",
         },
         { status: 429 }

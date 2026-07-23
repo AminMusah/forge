@@ -137,11 +137,11 @@ function HfTokenSection({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-medium">Hugging Face token</h3>
         <StatusDot on={hasToken} />
-        <span className="ml-auto text-xs text-muted-foreground">for chat</span>
+        <span className="ml-auto text-xs text-muted-foreground">chat & codegen</span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Cloud chat via the HF router, billed to your account. Local models need
-        no token.
+        Cloud chat and codegen via the HF router, billed to your account. Local
+        models need no token.
       </p>
 
       <form

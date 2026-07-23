@@ -13,6 +13,7 @@ import { CodegenError, requestPlayground } from "@/lib/playground/codegen-client
 import { useCodegenProviderStore } from "@/hooks/use-codegen-provider-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { useModelPerfStore } from "@/hooks/use-model-perf-store";
+import { useTokenStore } from "@/hooks/use-token-store";
 import { compilePlayground } from "@/lib/playground/compile";
 import { buildPlaygroundSrcdoc } from "@/lib/playground/iframe";
 import { DEFAULT_DTYPE } from "@/lib/model-cache";
@@ -68,9 +69,10 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   const { onOpen } = useModal();
   const perf = useModelPerfStore((s) => (model ? s.stats[model.id] : undefined));
   const hasCodegenProvider = useCodegenProviderStore((s) => s.hasProvider);
-  // Self-healing: saving a connection flips hasProvider, which lifts the block
-  // without needing a failed run to teach the UI it's allowed again.
-  const blocked = exhausted && !hasCodegenProvider;
+  const hasToken = useTokenStore((s) => s.hasToken);
+  // Self-healing: saving a codegen connection OR an HF token lifts the block —
+  // both now unlock codegen, so either flipping true means "you're past the wall".
+  const blocked = exhausted && !hasCodegenProvider && !hasToken;
 
   const versions = React.useMemo(
     () => messages.filter((m) => m.role === "assistant"),
@@ -339,11 +341,11 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
           // swallows its own tooltip, so the explanation has to be visible.
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3">
             <p className="text-sm text-muted-foreground">
-              You&apos;ve used your free playgrounds. Bring your own key to keep
-              building — it&apos;s unlimited.
+              You&apos;ve used your free playgrounds. Add your Hugging Face token —
+              it powers cloud chat and unlimited codegen, on your own account.
             </p>
             <Button size="sm" className="ml-auto" onClick={() => onOpen("providers")}>
-              Add a codegen provider
+              Add your Hugging Face token
             </Button>
           </div>
         ) : error ? (
@@ -406,7 +408,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
             disabled={busy || blocked}
             placeholder={
               blocked
-                ? "Add a codegen provider to keep editing"
+                ? "Add your Hugging Face token to keep editing"
                 : "Change the playground — e.g. make the boxes red, show a count…"
             }
             className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
