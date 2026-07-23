@@ -81,6 +81,7 @@ export function providerRoute(cookieName: string) {
     // For a cloud endpoint, catch a bad key or wrong URL HERE, not as a confusing
     // failure on the first message. /models is standard and free; a 404 means the
     // endpoint is reachable but has no catalog (some servers) — a soft pass.
+    let models: string[] = [];
     if (!isLocalBaseURL(baseURL)) {
       // Constrain what the server will fetch: reject non-http(s) schemes always,
       // and on a hosted deploy refuse private/loopback/link-local targets, so the
@@ -118,6 +119,20 @@ export function providerRoute(cookieName: string) {
       if (!res.ok && res.status !== 404) {
         return fail(`${host} rejected the connection (HTTP ${res.status}).`, 502);
       }
+
+      // The verify fetch already hit /models — reuse its body to hand the client
+      // a real catalog for the model-id field, instead of discarding it. A 404
+      // (no catalog) or an unparseable body just yields an empty list.
+      if (res.ok) {
+        try {
+          const body = (await res.json()) as { data?: { id?: string }[] };
+          models = (body.data ?? [])
+            .map((m) => m.id)
+            .filter((id): id is string => typeof id === "string");
+        } catch {
+          // Non-JSON catalog — leave models empty, the field falls back to free text.
+        }
+      }
     }
 
     const store = await cookies();
@@ -129,7 +144,7 @@ export function providerRoute(cookieName: string) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    return Response.json({ hasProvider: true, baseURL, modelId });
+    return Response.json({ hasProvider: true, baseURL, modelId, models });
   };
 
   const DELETE = async () => {

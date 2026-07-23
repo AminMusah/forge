@@ -79,6 +79,7 @@ export function ProvidersModal() {
             hasProvider={chat.hasProvider}
             storedBaseURL={chat.baseURL}
             storedModelId={chat.modelId}
+            storedModels={chat.models}
             onSave={chat.save}
             onClear={chat.clear}
           />
@@ -91,6 +92,7 @@ export function ProvidersModal() {
             hasProvider={codegen.hasProvider}
             storedBaseURL={codegen.baseURL}
             storedModelId={codegen.modelId}
+            storedModels={codegen.models}
             onSave={codegen.save}
             onClear={codegen.clear}
           />
@@ -190,6 +192,8 @@ interface ConnectionSectionProps {
   hasProvider: boolean | null;
   storedBaseURL: string | null;
   storedModelId: string | null;
+  /** Model ids from the provider's /models catalog (cloud only; empty for local). */
+  storedModels: string[];
   onSave: (conn: {
     baseURL: string;
     apiKey: string;
@@ -207,6 +211,7 @@ function ConnectionSection({
   hasProvider,
   storedBaseURL,
   storedModelId,
+  storedModels,
   onSave,
   onClear,
 }: ConnectionSectionProps) {
@@ -237,6 +242,10 @@ function ConnectionSection({
   const activePreset = presets.find((p) => p.baseURL === baseURL);
   // A local endpoint (Ollama) needs no key — don't require one to save.
   const local = isLocalBaseURL(baseURL);
+  // Local models come from a browser-side probe of the running Ollama; a cloud
+  // catalog comes from the server's verify fetch, handed back after save() —
+  // the browser can't call a cloud /models itself (the key is httpOnly).
+  const modelOptions = local ? localModels : storedModels;
 
   // Discover installed models for a LOCAL endpoint (the server can't reach the
   // user's localhost, but the browser can). Seed the field with a real installed
@@ -337,15 +346,15 @@ function ConnectionSection({
           value={modelId}
           onChange={(e) => setModelId(e.target.value)}
           placeholder={
-            local && localModels.length ? "pick or type a model" : "model id"
+            modelOptions.length ? "pick or type a model" : "model id"
           }
           autoComplete="off"
           spellCheck={false}
-          list={localModels.length ? listId : undefined}
+          list={modelOptions.length ? listId : undefined}
         />
-        {localModels.length > 0 && (
+        {modelOptions.length > 0 && (
           <datalist id={listId}>
-            {localModels.map((id) => (
+            {modelOptions.map((id) => (
               <option key={id} value={id} />
             ))}
           </datalist>

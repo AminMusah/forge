@@ -22,6 +22,8 @@ export interface ProviderStore {
   hasProvider: boolean | null;
   baseURL: string | null;
   modelId: string | null;
+  /** Model ids from the provider's /models catalog, fetched during save(). */
+  models: string[];
   refresh: () => Promise<void>;
   save: (conn: {
     baseURL: string;
@@ -41,6 +43,7 @@ export function createProviderStore(endpoint: string) {
     hasProvider: null,
     baseURL: null,
     modelId: null,
+    models: [],
     refresh: async () => {
       try {
         const res = await fetch(endpoint);
@@ -70,11 +73,17 @@ export function createProviderStore(endpoint: string) {
         body: JSON.stringify(conn),
       });
       if (!res.ok) throw new Error(await readError(res));
-      set({ hasProvider: true, baseURL: conn.baseURL, modelId: conn.modelId });
+      const data = (await res.json()) as { models?: string[] };
+      set({
+        hasProvider: true,
+        baseURL: conn.baseURL,
+        modelId: conn.modelId,
+        models: data.models ?? [],
+      });
     },
     clear: async () => {
       await fetch(endpoint, { method: "DELETE" });
-      set({ hasProvider: false, baseURL: null, modelId: null });
+      set({ hasProvider: false, baseURL: null, modelId: null, models: [] });
     },
   }));
 }
