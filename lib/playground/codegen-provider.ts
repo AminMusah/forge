@@ -41,7 +41,6 @@ export const FREE_CODEGEN_LIMIT = 3;
 
 export interface CodegenModel {
   model: LanguageModel;
-  label: string;
 }
 
 function openAICompatible(
@@ -63,7 +62,6 @@ export function codegenModel(
   if (connection) {
     return {
       model: openAICompatible("byo", connection.baseURL, connection.apiKey, connection.modelId),
-      label: `BYO · ${connection.modelId}`,
     };
   }
 
@@ -80,7 +78,6 @@ export function freeCodegenModel(): CodegenModel | null {
   if (process.env.FORGE_FREE_CODEGEN === "1" && key) {
     return {
       model: openAICompatible("groq", GROQ_BASE_URL, key, GROQ_CODEGEN_MODEL),
-      label: `Free · ${GROQ_CODEGEN_MODEL}`,
     };
   }
   return null;
