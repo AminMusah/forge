@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { NavMain } from "@/components/sidebar/nav-main";
@@ -31,14 +32,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="offcanvas" variant="floating" {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-2 p-1 pt-2">
-          {/* Same mark as app/icon.svg — a letterform rather than a glyph,
-              because the favicon has to survive 16px. */}
-          <div className="flex aspect-square size-6 items-center justify-center rounded bg-[#123524]">
-            <svg viewBox="0 0 12 20" className="h-3 w-auto" aria-hidden="true">
-              <path d="M0 0h12v4H4v4h7v4H4v8H0z" fill="#ffffff" />
-            </svg>
-          </div>
-          <span className="flex-1 truncate text-sm font-semibold">Forge</span>
+          {/* The mark + wordmark are the way home. Wraps only these two, not
+              the GitHub/theme buttons beside them, so those keep their own
+              actions. Same mark as app/icon.svg — a letterform rather than a
+              glyph, because the favicon has to survive 16px. */}
+          <Link
+            href="/"
+            aria-label="Forge home"
+            className="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <div className="flex aspect-square size-6 items-center justify-center rounded bg-[#123524]">
+              <svg viewBox="0 0 12 20" className="h-3 w-auto" aria-hidden="true">
+                <path d="M0 0h12v4H4v4h7v4H4v8H0z" fill="#ffffff" />
+              </svg>
+            </div>
+            <span className="truncate text-sm font-semibold">Forge</span>
+          </Link>
           <GitHubLink />
           <ThemeToggle />
         </div>
