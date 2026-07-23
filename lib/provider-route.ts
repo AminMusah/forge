@@ -8,6 +8,7 @@ import {
 } from "@/lib/connection";
 import {
   assertFetchableBaseURL,
+  fetchGuarded,
   isHostedDeploy,
   UNREACHABLE,
 } from "@/lib/connection-policy";
@@ -103,7 +104,7 @@ export function providerRoute(cookieName: string) {
 
       let res: Response;
       try {
-        res = await fetch(`${baseURL}/models`, {
+        res = await fetchGuarded(`${baseURL}/models`, {
           headers: { Authorization: `Bearer ${apiKey}` },
         });
       } catch {

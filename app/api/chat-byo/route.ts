@@ -16,6 +16,7 @@ import {
   CHAT_COOKIE,
   parseConnection,
 } from "@/lib/connection";
+import { fetchGuarded } from "@/lib/connection-policy";
 
 /**
  * Chat against the user's BYO OpenAI-compatible connection (local Ollama, or a
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
       name: "byo-chat",
       baseURL: conn.baseURL,
       apiKey: conn.apiKey,
+      fetch: fetchGuarded,
     })(conn.modelId),
     middleware: reasoningMiddleware(reasoning === true),
   });

@@ -2,6 +2,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 
 import type { Connection } from "@/lib/connection";
+import { fetchGuarded } from "@/lib/connection-policy";
 
 /**
  * The codegen model — the cloud AI that writes playground UIs.
@@ -49,7 +50,9 @@ function openAICompatible(
   apiKey: string,
   modelId: string
 ): LanguageModel {
-  return createOpenAICompatible({ name, baseURL, apiKey })(modelId);
+  return createOpenAICompatible({ name, baseURL, apiKey, fetch: fetchGuarded })(
+    modelId
+  );
 }
 
 /** The user's own BYO codegen model, or null if they haven't configured one. */

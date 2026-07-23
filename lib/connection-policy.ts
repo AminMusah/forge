@@ -92,3 +92,33 @@ export async function assertFetchableBaseURL(baseURL: string): Promise<void> {
     throw new Error(UNREACHABLE);
   }
 }
+
+/**
+ * A drop-in `fetch` that enforces the SSRF policy on the URL being requested,
+ * every time — not just once at save. Two protections the raw fetch lacks:
+ *
+ *  - re-runs assertFetchableBaseURL on the ACTUAL url, so a connection that was
+ *    clean when stored can't be re-pointed at an internal host afterwards, and
+ *  - on a hosted deploy, refuses to FOLLOW a redirect: a public host that
+ *    passed the check can still answer 3xx -> 169.254.169.254, which is how the
+ *    one-shot check at save time gets defeated.
+ *
+ * Pass it as the `fetch` option to createOpenAICompatible, and use it directly
+ * for the verify fetch. Local dev is unguarded on purpose (see
+ * assertFetchableBaseURL) — pointing at your own machine is the feature there.
+ */
+export const fetchGuarded: typeof fetch = async (input, init) => {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+  await assertFetchableBaseURL(url);
+  return fetch(input, {
+    ...init,
+    // "error" makes fetch THROW on any 3xx rather than follow it. Gated on a
+    // hosted deploy so a local Ollama that legitimately redirects still works.
+    redirect: isHostedDeploy() ? "error" : init?.redirect ?? "follow",
+  });
+};
