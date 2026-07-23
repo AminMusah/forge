@@ -11,7 +11,8 @@ export async function generateMetadata({
   const modelName = model?.split("/").pop() ?? "a model";
   const label = task ? taskLabel(task) : "Playground";
   const title = `${label} · ${modelName}`;
-  const description = "Run this model in your browser — no install, no account. Built with Forge.";
+  const description =
+    "Run this model in your browser. No install, No account. Built with Forge.";
   // The route-segment `opengraph-image` convention prerenders once at build
   // time and ignores request-time searchParams in this Next version, so the
   // card is served from a plain Route Handler that reads them from req.url.
@@ -19,12 +20,22 @@ export async function generateMetadata({
   if (task) cardParams.set("task", task);
   if (model) cardParams.set("model", model);
   const cardUrl = `/p/card?${cardParams.toString()}`;
-  const image = { url: cardUrl, width: 1200, height: 630, alt: "A Forge playground" };
+  const image = {
+    url: cardUrl,
+    width: 1200,
+    height: 630,
+    alt: "A Forge playground",
+  };
   return {
     title,
     description,
     openGraph: { title, description, images: [image] },
-    twitter: { card: "summary_large_image", title, description, images: [cardUrl] },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [cardUrl],
+    },
   };
 }
 
