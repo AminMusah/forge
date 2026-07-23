@@ -1,8 +1,21 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
+import { toast } from "sonner";
 
 import type { Chat, ChatMessage, MessageFile } from "@/lib/types";
+
+// Warn once when storage fills; reset on the next successful write so a user
+// who frees space and later fills it again is warned again.
+let warnedQuota = false;
+
+function isQuotaError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED")
+  );
+}
 
 /**
  * Transcripts are synced into the store on every streamed token — cheap in
@@ -37,9 +50,21 @@ function debouncedChatStorage(
     firstPendingAt = undefined;
     try {
       localStorage.setItem(name, JSON.stringify(value));
-    } catch {
-      // Quota exceeded — keep the session usable rather than throwing; the
-      // in-memory store is still correct, only the write is lost.
+      // A write went through — if we'd warned about a full store, allow a
+      // future fill to warn again.
+      warnedQuota = false;
+    } catch (error) {
+      // Keep the session usable rather than throwing; the in-memory store is
+      // still correct, only the write is lost. But a SILENT loss means the user
+      // reloads later and finds work gone — so warn once when it's a full store.
+      if (isQuotaError(error) && !warnedQuota) {
+        warnedQuota = true;
+        toast.error("Storage is full — new chats aren't being saved.", {
+          description:
+            "Delete old chats to free space, or your recent work may be lost on reload.",
+          duration: 10000,
+        });
+      }
     }
   };
 
