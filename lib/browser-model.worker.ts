@@ -385,8 +385,18 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
   }
 
   const inferStart = performance.now();
-  const data = await loaded.pipe(...args, options);
+  const raw = await loaded.pipe(...args, options);
   const inferenceMs = performance.now() - inferStart;
+
+  // background-removal UNWRAPS a single-image call to a bare RawImage
+  // (`return Array.isArray(images) ? result : result[0]` in the pipeline), and
+  // Forge always calls with one image — but the descriptor promises an array, so
+  // generated code reads result[0] and gets undefined. Re-wrap to make the
+  // promised shape true. Done here rather than in the descriptor because this
+  // also fixes playgrounds ALREADY generated against that promise; a descriptor
+  // edit would only help future ones.
+  const data =
+    task === "background-removal" && !Array.isArray(raw) ? [raw] : raw;
 
   post({ type: "stats", id, loadMs, tokensPerSecond: 0, inferenceMs });
   post({ type: "result", id, data });
