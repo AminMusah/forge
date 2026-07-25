@@ -402,6 +402,13 @@ async function run(request: Extract<WorkerRequest, { type: "run" }>) {
   post({ type: "result", id, data });
 }
 
+// Base / completion models ship a tokenizer with no chat template, so the
+// text-generation pipeline's apply_chat_template() throws. Give those a neutral
+// ChatML fallback so the model still answers instead of erroring out. Models
+// that ship their own template keep it (the guard below only fills a blank).
+const CHATML_FALLBACK =
+  "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant\\n'}}{% endif %}";
+
 async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
   const { id, modelId, dtype, messages } = request;
 
@@ -424,6 +431,13 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
     const loadMs = performance.now() - loadStart;
     if (loaded.kind !== "text-generation") throw new Error("Wrong model loaded.");
     const model = loaded.pipe;
+
+    // Fill a missing chat template so apply_chat_template() (invoked when the
+    // pipeline is called with a messages array) doesn't throw on base models.
+    const tokenizer = model.tokenizer as { chat_template?: string };
+    if (!tokenizer.chat_template) {
+      tokenizer.chat_template = CHATML_FALLBACK;
+    }
 
     // Time generation from the FIRST token (excluding load) so tokens/sec is the
     // steady-state rate, not diluted by the cold-start compile.

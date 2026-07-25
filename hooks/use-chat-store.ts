@@ -142,6 +142,12 @@ interface ChatStore {
    * playground opens on that code instead of auto-generating a fresh one.
    */
   createSharedChat: (title: string, modelId: string, code: string) => string;
+  /**
+   * Creates an empty chat pinned to a model — for "Use in chat", where there is
+   * no first message yet. Titled generically until the first message names it
+   * (see sendMessage). Returns the new id.
+   */
+  createEmptyChat: (modelId: string) => string;
   /** Appends a user message and bumps the chat to the top of recents. */
   sendMessage: (
     chatId: string,
@@ -199,6 +205,19 @@ export const useChatStore = create<ChatStore>()(
         return id;
       },
 
+      createEmptyChat: (modelId) => {
+        const id = crypto.randomUUID();
+        const chat: Chat = {
+          id,
+          title: "New chat",
+          updatedAt: today(),
+          modelId,
+          messages: [],
+        };
+        set((state) => ({ chats: [chat, ...state.chats] }));
+        return id;
+      },
+
       sendMessage: (chatId, content, file) => {
         const chat = get().chats.find((c) => c.id === chatId);
         if (!chat) return false;
@@ -211,7 +230,16 @@ export const useChatStore = create<ChatStore>()(
         set((state) => {
           const updated = state.chats.map((c) =>
             c.id === chatId
-              ? { ...c, updatedAt: today(), messages: [...c.messages, message] }
+              ? {
+                  ...c,
+                  updatedAt: today(),
+                  // An eager "Use in chat" chat is born empty with a placeholder
+                  // title; its first message is what should name it. Chats made
+                  // via createChat already have a message, so this never fires
+                  // for them.
+                  title: c.messages.length === 0 ? titleFrom(content) : c.title,
+                  messages: [...c.messages, message],
+                }
               : c
           );
           const target = updated.find((c) => c.id === chatId)!;

@@ -49,8 +49,8 @@ export function ChatPlaceholder() {
   const setModel = useModelStore((state) => state.setModel);
 
   // Default view is the claim + gallery; a chat card switches to the composer
-  // without leaving this page — text-generation has nowhere else to route to
-  // (useOpenModel sends it right back here).
+  // without leaving this page — the landing cards open the composer inline
+  // instead of navigating away to a new chat.
   const [composing, setComposing] = React.useState(false);
 
   // Optimistic until mounted: hasWebGPU() is false during SSR (no navigator), so
@@ -82,8 +82,8 @@ export function ChatPlaceholder() {
 
   const handleCardClick = (model: Model) => {
     if (model.task === "text-generation") {
-      // useOpenModel would route text-generation to "/" — this very page — so
-      // chat opens inline instead: select it, then switch to the composer.
+      // The landing cards open the composer inline instead of navigating away
+      // to a new chat: select the model, then switch to the composer.
       setModel(model);
       setComposing(true);
       return;
