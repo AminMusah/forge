@@ -52,7 +52,7 @@ export function ConversationRail({ messages }: ConversationRailProps) {
     <TooltipProvider delay={120}>
       <nav
         aria-label="Jump to a message"
-        className="absolute inset-y-0 end-1 z-10 hidden flex-col items-center justify-center gap-1.5 md:flex"
+        className="absolute inset-y-0 inset-e-3 z-10 hidden flex-col items-center justify-center gap-1.5 md:flex"
       >
         {anchors.map((m) => {
           const active = m.id === currentAnchorId;
