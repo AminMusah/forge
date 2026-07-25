@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Check, Copy, DocumentText2, Refresh } from "reicon-react";
 
+import { ConversationRail } from "@/components/chat/conversation-rail";
 import { Markdown } from "@/components/chat/markdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -212,6 +213,7 @@ export function MessageList({
             ))}
           </MessageScrollerContent>
         </MessageScrollerViewport>
+        <ConversationRail messages={messages} />
         <MessageScrollerButton />
       </MessageScroller>
     </MessageScrollerProvider>
