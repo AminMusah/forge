@@ -3,9 +3,9 @@
 import * as React from "react";
 import { ArrowsRotate, Share } from "reicon-react";
 import { toast } from "sonner";
+import { ThinkingOrb } from "thinking-orbs";
 
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { CodeBlock } from "@/components/chat/code-block";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
@@ -436,7 +436,7 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
                     "no playground" (that copy read as broken). */}
                 {(busy || compiling || versions.length > 0) && !error ? (
                   <>
-                    <Spinner className="size-4" />
+                    <ThinkingOrb state="composing" size={20} aria-hidden />
                     <span>{status ?? "Loading playground…"}</span>
                   </>
                 ) : error ? (

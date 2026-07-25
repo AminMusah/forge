@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Check, Copy, DocumentText2, Refresh } from "reicon-react";
+import { ThinkingOrb } from "thinking-orbs";
 
 import { ConversationRail } from "@/components/chat/conversation-rail";
 import { Markdown } from "@/components/chat/markdown";
@@ -48,10 +49,19 @@ interface MessageRowProps {
 function PendingStatus() {
   const status = useModelLoadStore((state) => state.status);
 
+  // `status` is set only while weights download / compile ("working"); once it
+  // clears the model is loaded and generating the reply ("solving"). The orb
+  // carries the motion, so the caption no longer pulses — a second animation
+  // saying the same thing (cf. the reasoning trigger's comment).
   return (
-    <p className="animate-pulse text-muted-foreground" role="status">
-      {status ?? "Thinking…"}
-    </p>
+    <div className="flex items-center gap-3" role="status">
+      <ThinkingOrb
+        state={status ? "working" : "solving"}
+        size={20}
+        aria-hidden
+      />
+      <span className="text-muted-foreground">{status ?? "Thinking…"}</span>
+    </div>
   );
 }
 
@@ -110,80 +120,78 @@ function MessageActions({
  * The comparator compares by value, not reference: the store rebuilds every
  * message object on each token, so reference equality would never hold.
  */
-const MessageRow = React.memo(function MessageRow({
-  message,
-  isStreaming,
-  onRegenerate,
-}: MessageRowProps) {
-  // Reasoning ends once the answer starts arriving.
-  const isReasoning = isStreaming && !!message.reasoning && !message.content;
+const MessageRow = React.memo(
+  function MessageRow({ message, isStreaming, onRegenerate }: MessageRowProps) {
+    // Reasoning ends once the answer starts arriving.
+    const isReasoning = isStreaming && !!message.reasoning && !message.content;
 
-  return (
-    <MessageScrollerItem
-      messageId={message.id}
-      scrollAnchor={message.role === "user"}
-      className="group/message-row"
-    >
-      <Message
-        align={message.role === "user" ? "end" : "start"}
-        className="text-sm/relaxed"
+    return (
+      <MessageScrollerItem
+        messageId={message.id}
+        scrollAnchor={message.role === "user"}
+        className="group/message-row"
       >
-        <MessageContent>
-          {message.role === "user" ? (
-            <div className="flex flex-col items-end gap-1.5">
-              {/* The file's text went to the model, not the screen: rendering it
+        <Message
+          align={message.role === "user" ? "end" : "start"}
+          className="text-sm/relaxed"
+        >
+          <MessageContent>
+            {message.role === "user" ? (
+              <div className="flex flex-col items-end gap-1.5">
+                {/* The file's text went to the model, not the screen: rendering it
                   would bury the question under its own context. */}
-              {message.file && (
-                <div className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1 text-xs">
-                  <DocumentText2 className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{message.file.name}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {formatTextSize(message.file.text)}
-                  </span>
-                </div>
-              )}
-              {/* Users type literally — never parse their asterisks as markdown. */}
-              <Bubble variant="muted">
-                <BubbleContent className="whitespace-pre-wrap text-sm/relaxed">
-                  {message.content}
-                </BubbleContent>
-              </Bubble>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {message.reasoning && (
-                <Reasoning isStreaming={isReasoning}>
-                  <ReasoningTrigger />
-                  <ReasoningContent>{message.reasoning}</ReasoningContent>
-                </Reasoning>
-              )}
-              {message.content ? (
-                <Markdown>{message.content}</Markdown>
-              ) : (
-                !message.reasoning && <PendingStatus />
-              )}
-              {/* Actions only once the reply has settled — copying or
+                {message.file && (
+                  <div className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1 text-xs">
+                    <DocumentText2 className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{message.file.name}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {formatTextSize(message.file.text)}
+                    </span>
+                  </div>
+                )}
+                {/* Users type literally — never parse their asterisks as markdown. */}
+                <Bubble variant="muted">
+                  <BubbleContent className="whitespace-pre-wrap text-sm/relaxed">
+                    {message.content}
+                  </BubbleContent>
+                </Bubble>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {message.reasoning && (
+                  <Reasoning isStreaming={isReasoning}>
+                    <ReasoningTrigger />
+                    <ReasoningContent>{message.reasoning}</ReasoningContent>
+                  </Reasoning>
+                )}
+                {message.content ? (
+                  <Markdown>{message.content}</Markdown>
+                ) : (
+                  !message.reasoning && <PendingStatus />
+                )}
+                {/* Actions only once the reply has settled — copying or
                   regenerating a half-written answer isn't useful. */}
-              {!isStreaming && message.content && (
-                <MessageActions
-                  content={message.content}
-                  onRegenerate={onRegenerate}
-                />
-              )}
-            </div>
-          )}
-        </MessageContent>
-      </Message>
-    </MessageScrollerItem>
-  );
-},
-(prev, next) =>
-  prev.isStreaming === next.isStreaming &&
-  prev.message.id === next.message.id &&
-  prev.message.content === next.message.content &&
-  prev.message.reasoning === next.message.reasoning &&
-  prev.message.file?.name === next.message.file?.name &&
-  prev.onRegenerate === next.onRegenerate);
+                {!isStreaming && message.content && (
+                  <MessageActions
+                    content={message.content}
+                    onRegenerate={onRegenerate}
+                  />
+                )}
+              </div>
+            )}
+          </MessageContent>
+        </Message>
+      </MessageScrollerItem>
+    );
+  },
+  (prev, next) =>
+    prev.isStreaming === next.isStreaming &&
+    prev.message.id === next.message.id &&
+    prev.message.content === next.message.content &&
+    prev.message.reasoning === next.message.reasoning &&
+    prev.message.file?.name === next.message.file?.name &&
+    prev.onRegenerate === next.onRegenerate,
+);
 
 export function MessageList({
   messages,

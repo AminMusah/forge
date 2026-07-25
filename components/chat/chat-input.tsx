@@ -11,6 +11,8 @@ import {
 } from "reicon-react";
 import { toast } from "sonner";
 
+import { ThinkingOrb } from "thinking-orbs";
+
 import { ModelChip } from "@/components/chat/model-chip";
 import { Button } from "@/components/ui/button";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -219,7 +221,7 @@ export function ChatInput({
             </>
           ) : (
             <>
-              <Spinner className="size-3 shrink-0" />
+              <ThinkingOrb state="listening" size={20} aria-hidden />
               {/* While the weights are still coming down, say so — a bare
                   "Transcribing…" that hangs for a minute looks broken. */}
               <span>{dictation.progress ?? "Transcribing…"}</span>

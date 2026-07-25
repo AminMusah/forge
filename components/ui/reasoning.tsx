@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ChevronRight } from "reicon-react";
+import { ThinkingOrb } from "thinking-orbs";
 
 import {
   Collapsible,
@@ -10,7 +11,6 @@ import {
 } from "@/components/ui/collapsible";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
-import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 interface ReasoningContextValue {
@@ -97,7 +97,7 @@ function ReasoningTrigger({
               the moment reasoning ends and the answer begins. */}
           <IconSwap
             showing={isStreaming}
-            on={<Spinner />}
+            on={<ThinkingOrb state="solving" size={20} aria-hidden />}
             off={
               <ChevronRight className="transition-transform duration-200 ease-out group-data-open/reasoning:rotate-90" />
             }

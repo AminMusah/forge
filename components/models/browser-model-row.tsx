@@ -3,10 +3,10 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Check, DesktopDownload, Trash5 } from "reicon-react";
+import { ThinkingOrb } from "thinking-orbs";
 
 import { isRunnable, openActionLabel, unrunnableReason } from "@/lib/task-support";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { useModal } from "@/hooks/use-modal-store";
 import { preloadModel } from "@/lib/browser-transport";
 import {
@@ -175,7 +175,7 @@ export function BrowserModelRow({ model, onUse }: BrowserModelRowProps) {
 
       {status ? (
         <Button size="sm" variant="outline" disabled className="gap-1.5">
-          <Spinner className="size-3.5" />
+          <ThinkingOrb state="working" size={20} aria-hidden />
           Downloading
         </Button>
       ) : downloaded ? (
