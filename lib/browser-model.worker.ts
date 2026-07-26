@@ -57,6 +57,18 @@ export type WorkerRequest =
       task: HfTask;
       input: RunInput;
     }
+  // The command palette's tool-calling path. Distinct from `generate`: it hands
+  // the tokenizer a `tools` list, decodes WITH special tokens (the model's call
+  // is delimited by them), and returns the raw model turn in one shot rather than
+  // streaming — a routed command isn't a chat reply.
+  | {
+      type: "route";
+      id: string;
+      modelId: string;
+      dtype: Dtype;
+      messages: RouteTurn[];
+      tools: unknown[];
+    }
   // Download and compile ahead of time, so the first message streams at once.
   | { type: "preload"; id: string; modelId: string; dtype: Dtype; task: HfTask }
   // Drop the warm model and free its GPU memory. Carries the modelId rather than
@@ -116,6 +128,17 @@ export type WorkerResponse =
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+}
+
+/**
+ * A turn in a tool-calling exchange. The palette sends a single user turn today;
+ * the shape allows the `tool`/`assistant`-with-tool_calls turns a future
+ * multi-step chain would feed back, so the worker path needn't change for it.
+ */
+export interface RouteTurn {
+  role: "user" | "assistant" | "tool";
+  content?: string;
+  tool_calls?: unknown[];
 }
 
 /**
@@ -490,6 +513,59 @@ async function generate(request: Extract<WorkerRequest, { type: "generate" }>) {
 }
 
 /**
+ * The command palette's tool-calling turn. Unlike generate() this is one-shot and
+ * structured: the tokenizer renders the `tools` into the model's function-calling
+ * format, the model emits a single call, and we hand back the raw model turn for
+ * the main thread to parse. Parsing lives there, not here, so the call DSL can be
+ * iterated on without touching the worker.
+ */
+async function route(request: Extract<WorkerRequest, { type: "route" }>) {
+  const { id, modelId, dtype, messages, tools } = request;
+  const loaded = await load(modelId, dtype, "text-generation", id);
+  if (loaded.kind !== "text-generation") throw new Error("Wrong model loaded.");
+
+  post({ type: "progress", id, text: "Interpreting…" });
+
+  // transformers.js types don't surface apply_chat_template's `tools`/`return_dict`
+  // options or the model's generate() cleanly on the pipeline; reach for them with
+  // narrow local shapes rather than fighting the public types.
+  const tokenizer = loaded.pipe.tokenizer as unknown as {
+    apply_chat_template: (messages: unknown, options: unknown) => unknown;
+    batch_decode: (sequences: unknown, options: unknown) => string[];
+  };
+  const model = loaded.pipe.model as unknown as {
+    generate: (options: unknown) => Promise<unknown>;
+  };
+
+  // The tokenizer renders `tools` into FunctionGemma's <start_function_declaration>
+  // blocks via the model's own chat template — we never hand-format them.
+  const inputs = tokenizer.apply_chat_template(messages, {
+    tools,
+    add_generation_prompt: true,
+    return_dict: true,
+  }) as Record<string, unknown>;
+
+  // Greedy: a routed command wants the single call the model is most sure of, not
+  // sampled variety.
+  const output = await model.generate({
+    ...inputs,
+    max_new_tokens: 256,
+    do_sample: false,
+  });
+
+  // Keep special tokens: the call is fenced by <start_function_call> /
+  // <end_function_call> and its string args by <escape>. Strip them and there is
+  // nothing left to parse. Slice the model's turn off the tail (add_generation_prompt
+  // ends the prompt with '<start_of_turn>model') rather than tensor-slicing the
+  // prompt length — robust across transformers.js builds.
+  const raw =
+    tokenizer.batch_decode(output, { skip_special_tokens: false })[0] ?? "";
+  const turn = raw.split("<start_of_turn>model").pop() ?? "";
+
+  post({ type: "result", id, data: { text: turn } });
+}
+
+/**
  * Jobs run one at a time, in order.
  *
  * This worker is shared by chat and by dictation, and it holds ONE warm model —
@@ -549,6 +625,9 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
           break;
         case "generate":
           await generate(request);
+          break;
+        case "route":
+          await route(request);
           break;
       }
     } catch (error) {

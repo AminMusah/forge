@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, Plus, Search } from "reicon-react";
+import { Box, Plus, Search, Sparkles } from "reicon-react";
 
 import { CollapsibleMenuGroup } from "@/components/sidebar/collapsible-menu-group";
 import {
@@ -15,6 +15,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { useModal } from "@/hooks/use-modal-store";
+import { useCommandPaletteStore } from "@/hooks/use-command-palette-store";
 
 /** Model sources; custom and uploaded models will join Hugging Face here. */
 const modelSources = [{ name: "Hugging Face", url: "/models" }];
@@ -22,6 +23,7 @@ const modelSources = [{ name: "Hugging Face", url: "/models" }];
 export function NavMain() {
   const pathname = usePathname();
   const { onOpen } = useModal();
+  const openCommand = useCommandPaletteStore((state) => state.open);
 
   // Controlled: navigating to a models route opens the group, but the user's
   // own toggling is preserved (an uncontrolled defaultOpen can't do both).
@@ -45,6 +47,15 @@ export function NavMain() {
           <SidebarMenuButton onClick={() => onOpen("searchChats")}>
             <Search />
             <span>Search chats</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={openCommand}>
+            <Sparkles />
+            <span>Command</span>
+            <kbd className="ml-auto text-[10px] tracking-wide text-muted-foreground">
+              ⌘K
+            </kbd>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <CollapsibleMenuGroup

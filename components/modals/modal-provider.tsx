@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { CommandPalette } from "@/components/command-palette/command-palette";
 import { DeleteChatModal } from "@/components/modals/delete-chat-modal";
 import { ProvidersModal } from "@/components/modals/providers-modal";
 import { RemoveModelModal } from "@/components/modals/remove-model-modal";
@@ -35,6 +36,7 @@ export function ModalProvider() {
       <DeleteChatModal />
       <ProvidersModal />
       <RemoveModelModal />
+      <CommandPalette />
     </>
   );
 }
