@@ -88,6 +88,12 @@ interface ChatInputProps {
   isStreaming?: boolean;
   onStop?: () => void;
   /**
+   * Lock the whole composer — no typing, no send, no dictation. The playground
+   * uses it for the paywall wall: nothing can be authored until credentials
+   * change, and the placeholder says what to do about it.
+   */
+  disabled?: boolean;
+  /**
    * Restrict the model menu to this task. An open chat passes its own, so it
    * can't be re-pinned to a model whose surface can't render it; the home
    * screen passes nothing, because switching task there is how you get to
@@ -105,6 +111,7 @@ export function ChatInput({
   onStop,
   task,
   placeholder,
+  disabled = false,
 }: ChatInputProps) {
   const [value, setValue] = React.useState("");
   const [file, setFile] = React.useState<MessageFile | null>(null);
@@ -140,6 +147,7 @@ export function ChatInput({
   }, [value]);
 
   const submit = () => {
+    if (disabled) return;
     if (isStreaming) {
       onStop?.();
       return;
@@ -167,6 +175,7 @@ export function ChatInput({
         ref={textareaRef}
         rows={1}
         autoFocus={autoFocus}
+        disabled={disabled}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -180,7 +189,7 @@ export function ChatInput({
         placeholder={
           file ? `Ask about ${file.name}…` : (placeholder ?? "Ask anything…")
         }
-        className="w-full resize-none bg-transparent px-1 pt-1 pb-4 text-[15px] outline-none placeholder:text-muted-foreground"
+        className="w-full resize-none bg-transparent px-1 pt-1 pb-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70"
       />
 
       {file && (
@@ -253,6 +262,7 @@ export function ChatInput({
                     variant="ghost"
                     size="sm"
                     aria-label="Attach a text file"
+                    disabled={disabled}
                     onClick={() => fileInputRef.current?.click()}
                     className="size-8 px-0"
                   />
@@ -277,10 +287,10 @@ export function ChatInput({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    aria-disabled={dictation.status === "transcribing"}
+                    aria-disabled={disabled || dictation.status === "transcribing"}
                     aria-label={isRecording ? "Stop recording" : "Voice input"}
                     onClick={() => {
-                      if (dictation.status === "transcribing") return;
+                      if (disabled || dictation.status === "transcribing") return;
                       if (isRecording) void dictation.stop();
                       else void dictation.start();
                     }}
@@ -325,7 +335,7 @@ export function ChatInput({
             type="submit"
             size="icon"
             aria-label={isStreaming ? "Stop generating" : "Send message"}
-            disabled={!isStreaming && !value.trim()}
+            disabled={disabled || (!isStreaming && !value.trim())}
             className="size-9 rounded-lg"
           >
             <IconSwap showing={isStreaming} on={<Stop />} off={<ArrowUp />} />

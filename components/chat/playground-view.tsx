@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ThinkingOrb } from "thinking-orbs";
 
 import { Button } from "@/components/ui/button";
+import { ChatInput } from "@/components/chat/chat-input";
 import { CodeBlock } from "@/components/chat/code-block";
 import { useChatStore } from "@/hooks/use-chat-store";
 import { useModelStore } from "@/hooks/use-model-store";
@@ -59,7 +60,6 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
 
   const [current, setCurrent] = React.useState<string | null>(null);
   const [srcdoc, setSrcdoc] = React.useState<string | null>(null);
-  const [instruction, setInstruction] = React.useState("");
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -273,14 +273,13 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
   // run()'s catch already treats an aborted signal as "Stopped", not an error.
   React.useEffect(() => () => abortRef.current?.abort(), []);
 
-  const modify = () => {
-    const change = instruction.trim();
+  const modify = (raw: string) => {
+    const change = raw.trim();
     const code = versions.find((v) => v.id === current)?.content;
     // Guard model here, not just in run(): `model!.task` is evaluated at this
     // call site, so an unknown pinned model threw a TypeError before run()'s own
     // guard could no-op. The catalog legitimately may not hold it.
     if (!model || !change || !code) return;
-    setInstruction("");
     void run({ task: model.task, previousCode: code, instruction: change }, change);
   };
 
@@ -453,35 +452,25 @@ export function PlaygroundView({ chatId }: { chatId: string }) {
       </div>
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-        <div className="flex items-center gap-2 rounded-[18px] border bg-card p-2">
-          <input
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && modify()}
-            disabled={busy || blocked}
-            placeholder={
-              blocked
-                ? hasToken
-                  ? "Add a codegen provider to keep editing"
-                  : "Add your Hugging Face token to keep editing"
-                : "Change the playground — e.g. make the boxes red, show a count…"
-            }
-            className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
-          />
-          {busy ? (
-            <Button variant="outline" size="sm" onClick={stop}>
-              Stop
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              onClick={modify}
-              disabled={!instruction.trim() || blocked}
-            >
-              Modify
-            </Button>
-          )}
-        </div>
+        {/* The same composer chat uses — its model chip (with live tok/s), voice
+            input and grow-with-content textarea, rather than a bare one-liner.
+            Attachments stay off: a modify instruction has nothing to attach to. */}
+        <ChatInput
+          onSend={modify}
+          isStreaming={busy}
+          onStop={stop}
+          disabled={blocked}
+          // A playground is pinned to its task; the chip may only re-aim it at
+          // another model that renders the same surface.
+          task={model?.task}
+          placeholder={
+            blocked
+              ? hasToken
+                ? "Add a codegen provider to keep editing"
+                : "Add your Hugging Face token to keep editing"
+              : "Change the playground — e.g. make the boxes red, show a count…"
+          }
+        />
       </div>
     </div>
   );
